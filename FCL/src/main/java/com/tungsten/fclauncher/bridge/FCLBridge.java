@@ -103,6 +103,7 @@ public class FCLBridge implements Serializable {
     public native void setLdLibraryPath(String path);
 
     public native void setupExitTrap(FCLBridge bridge);
+    public  native static void initializeHooks();
 
     public void setThread(Thread thread) {
         this.thread = thread;
