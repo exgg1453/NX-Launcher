@@ -417,6 +417,23 @@ public class LauncherSettingPage extends FCLPage implements LauncherSettingAdapt
             case SWITCH_ALLOW_SCREENSHOTS:
                 sharedPreferences.edit().putBoolean("allowScreenshots", checked).apply();
                 break;
+            case SWITCH_VOICE_COMMANDS:
+                sharedPreferences.edit().putBoolean("voiceCommandsEnabled", checked).apply();
+                if (checked && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    if (!ActivityCompat.shouldShowRequestPermissionRationale(MainActivity.getInstance(), Manifest.permission.RECORD_AUDIO)) {
+                        MainActivity.getInstance().permissionResultLauncher.launch(Manifest.permission.RECORD_AUDIO);
+                    } else {
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                            Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+                            intent.setData(uri);
+                            getContext().startActivity(intent);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                break;
             default:
                 break;
         }

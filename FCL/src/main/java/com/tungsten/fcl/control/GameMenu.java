@@ -131,6 +131,8 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
     private RecyclerView rightMenuList;
 
     private MultiplayerDialog multiplayerDialog;
+    @Nullable
+    private VoiceCommandListener voiceCommandListener;
 
     /** 右菜单切换动画进行中标记，避免动画叠加 */
     private boolean rightMenuAnimating;
@@ -597,6 +599,21 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
         });
         if (menuSetting.isHideMenuView()) {
             Toast.makeText(activity, R.string.tip_hide_menu_view, Toast.LENGTH_LONG).show();
+        }
+
+        if (!isSimulated()) {
+            voiceCommandListener = new VoiceCommandListener(activity, fclInput);
+            SharedPreferences launcherPrefs = activity.getSharedPreferences("launcher", MODE_PRIVATE);
+            if (launcherPrefs.getBoolean("voiceCommandsEnabled", false)) {
+                voiceCommandListener.start();
+            }
+        }
+    }
+
+    /** Sesli komut dinlemesini durdurur; oyun aktivitesi kapanırken çağrılmalıdır. */
+    public void stopVoiceCommands() {
+        if (voiceCommandListener != null) {
+            voiceCommandListener.stop();
         }
     }
 

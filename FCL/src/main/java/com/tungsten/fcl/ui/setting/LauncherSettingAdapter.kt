@@ -64,6 +64,7 @@ enum class LauncherSettingTag {
     SWITCH_CLOSE_SKIN_MODEL,
     SWITCH_DISABLE_FULLSCREEN_INPUT,
     SWITCH_ALLOW_SCREENSHOTS,
+    SWITCH_VOICE_COMMANDS,
 
     // Spinner 行
     SPINNER_LANGUAGE,
@@ -302,6 +303,13 @@ class LauncherSettingAdapter(
                 { prefs.getBoolean("allowScreenshots", false) },
                 LauncherSettingTag.SWITCH_ALLOW_SCREENSHOTS,
                 R.string.settings_launcher_allow_screenshot_desc,
+                group = SettingGroup.Launcher
+            ),
+            Row.SwitchRow(
+                R.string.settings_launcher_voice_commands,
+                { prefs.getBoolean("voiceCommandsEnabled", false) },
+                LauncherSettingTag.SWITCH_VOICE_COMMANDS,
+                R.string.settings_launcher_voice_commands_desc,
                 group = SettingGroup.Launcher
             ),
             Row.SeekBarRow(

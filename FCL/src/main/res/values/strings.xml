@@ -1046,6 +1046,8 @@
     <string name="settings_launcher_custom_launcher_name_desc">Customize the launcher name displayed in-game.</string>
     <string name="settings_launcher_allow_screenshot">Allow screenshot/recording in crash activity</string>
     <string name="settings_launcher_allow_screenshot_desc">Allow screenshots or screen recording on interfaces where they are currently prohibited.</string>
+    <string name="settings_launcher_voice_commands">Voice commands</string>
+    <string name="settings_launcher_voice_commands_desc">Control the game with spoken Turkish commands while playing (e.g. saying "F3\'e bas" presses F3). Off by default, requires microphone permission.</string>
 
     <string name="settings_memory">Memory</string>
     <string name="settings_memory_desc">Set the maximum memory (MB) available to the game.</string>

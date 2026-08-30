@@ -985,6 +985,8 @@
     <string name="settings_launcher_custom_launcher_name_desc">Oyun içinde gösterilen başlatıcı adını özelleştirin.</string>
     <string name="settings_launcher_allow_screenshot">Çökme ekranında ekran görüntüsü/kaydına izin ver</string>
     <string name="settings_launcher_allow_screenshot_desc">Şu anda yasak olan arayüzlerde ekran görüntüsü veya ekran kaydına izin verin.</string>
+    <string name="settings_launcher_voice_commands">Sesli komutlar</string>
+    <string name="settings_launcher_voice_commands_desc">Oyun oynarken Türkçe sesli komutlarla oyunu kontrol edin (örn. "F3\'e bas" demek F3\'e basar). Varsayılan olarak kapalıdır, mikrofon izni gerektirir.</string>
 
     <string name="settings_memory">Bellek</string>
     <string name="settings_memory_desc">Oyunun kullanabileceği maksimum belleği (MB) ayarlayın.</string>

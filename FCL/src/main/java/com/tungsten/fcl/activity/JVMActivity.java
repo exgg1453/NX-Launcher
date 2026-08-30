@@ -259,6 +259,9 @@ public class JVMActivity extends FCLActivity implements TextureView.SurfaceTextu
     @Override
     protected void onDestroy() {
         Terracotta.setWaiting(this, true);
+        if (menu instanceof GameMenu) {
+            ((GameMenu) menu).stopVoiceCommands();
+        }
         super.onDestroy();
     }
 
