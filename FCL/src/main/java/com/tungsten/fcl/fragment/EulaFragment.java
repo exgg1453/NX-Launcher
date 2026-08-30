@@ -18,8 +18,10 @@ import com.tungsten.fcllibrary.component.FCLFragment;
 import com.tungsten.fcllibrary.component.view.FCLButton;
 import com.tungsten.fcllibrary.component.view.FCLProgressBar;
 import com.tungsten.fcllibrary.component.view.FCLTextView;
+import com.tungsten.fcllibrary.util.LocaleUtils;
 
 import java.io.IOException;
+import java.util.Locale;
 
 public class EulaFragment extends FCLFragment implements View.OnClickListener {
 
@@ -46,11 +48,20 @@ public class EulaFragment extends FCLFragment implements View.OnClickListener {
     private void loadEula() {
         new Thread(() -> {
             String str;
+            String assetName = "eula.txt";
+            Locale locale = LocaleUtils.getLocale(LocaleUtils.getLanguage(requireActivity()));
+            if ("tr".equals(locale.getLanguage())) {
+                assetName = "eula_tr.txt";
+            }
             try {
-                str = IOUtils.readFullyAsString(requireActivity().getAssets().open("eula.txt"));
+                str = IOUtils.readFullyAsString(requireActivity().getAssets().open(assetName));
             } catch (IOException e) {
-                e.printStackTrace();
-                str = getString(R.string.splash_eula_error);
+                try {
+                    str = IOUtils.readFullyAsString(requireActivity().getAssets().open("eula.txt"));
+                } catch (IOException e2) {
+                    e2.printStackTrace();
+                    str = getString(R.string.splash_eula_error);
+                }
             }
             final String s = str;
             if (getActivity() != null) {

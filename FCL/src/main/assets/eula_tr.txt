@@ -1,0 +1,20 @@
+NX Launcher son kullanıcı lisans sözleşmesi
+
+Yazılımı kullanmadan önce lütfen bu sözleşmeyi okuyun.
+NX Launcher, Fold Craft Launcher'ın (FCL-Team tarafından geliştirilmiştir) bir türevidir (fork).
+
+1. Kullanıcının yükümlülükleri
+1) Uygun bir cihaza sahip olun; NX Launcher, Android 8.0 veya üzerini gerektirir.
+2) İnternet erişimi ve diğer hizmetlerin maliyetini karşılayın.
+3) Yazılımı kendi kullanımınızın tüm sonuçlarından siz sorumlusunuz.
+
+2. Sorumluluk reddi
+1) Bu yazılımın kullanımından doğan risk kullanıcıya aittir.
+2) Yazılımın tüm kullanıcı ihtiyaçlarını karşılayacağı garanti edilmez.
+3) Yazılım, üçüncü taraf hizmetlerin doğruluğundan, güvenliğinden, yasallığından vb. sorumlu değildir.
+4) Geliştirici, kullanıcıların üçüncü taraf hizmetleri kullanmasından kaynaklanan sorunlardan sorumlu değildir ve herhangi bir yasal sorumluluk üstlenmeyecek ve üstlenemez.
+
+3. Telif hakkı
+1) Yazılımın telif hakkı, patent hakları ve diğer fikri mülkiyet hakları geliştiriciye veya belirlenen telif hakkı sahibine aittir.
+2) Yazılım tarafından kullanılan üçüncü taraf bileşenler ilgili telif hakkı sahiplerine aittir.
+3) Yazılım tamamen açık kaynaklıdır, lütfen yazılımın açık kaynak lisansına uyun.
