@@ -31,6 +31,9 @@ class VoiceCommandListener(
     private var recognizer: SpeechRecognizer? = null
     private var stopped = true
 
+    /** En son basılan tuş bağlaması; hedefsiz "kapat" komutu bunu tekrar basar. */
+    private var lastBinding: String? = null
+
     fun start() {
         if (!stopped) return
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) return
@@ -85,8 +88,13 @@ class VoiceCommandListener(
     }
 
     private fun triggerCommand(recognizedText: String) {
-        val binding = VoiceCommands.match(recognizedText) ?: return
-        val keycode = MinecraftKeyBindingMapper.getGlfwKeycode(binding)?.toInt() ?: return
+        val result = VoiceCommands.match(recognizedText) ?: return
+        val binding = when (result) {
+            is VoiceCommandResult.Press -> result.binding
+            VoiceCommandResult.RepeatLast -> lastBinding
+        } ?: return
+        val keycode = resolveKeycode(binding) ?: return
+        lastBinding = binding
         Schedulers.io().execute {
             input.sendKeyEvent(keycode, true)
             try {
@@ -94,6 +102,22 @@ class VoiceCommandListener(
             } catch (_: InterruptedException) {
             }
             input.sendKeyEvent(keycode, false)
+        }
+    }
+
+    /**
+     * "key.mouse.*" bağlamaları, MinecraftKeyBindingMapper.getGlfwKeycode() üzerinden
+     * ham GLFW fare düğmesi değerlerini (0/1/2) döndürür - ama FCLInput.sendKeyEvent()
+     * fare tuşlarını 1000+ aralığındaki kendi sabitleriyle (MOUSE_LEFT/RIGHT/MIDDLE)
+     * bekler; 0/1/2 değerleri orada yanlışlıkla klavye tuş kodu (ör. 1 = KEY_ESC)
+     * olarak yorumlanır. Bu yüzden fare düğmeleri burada doğrudan eşleniyor.
+     */
+    private fun resolveKeycode(binding: String): Int? {
+        return when (binding) {
+            "key.mouse.left" -> FCLInput.MOUSE_LEFT
+            "key.mouse.right" -> FCLInput.MOUSE_RIGHT
+            "key.mouse.middle" -> FCLInput.MOUSE_MIDDLE
+            else -> MinecraftKeyBindingMapper.getGlfwKeycode(binding)?.toInt()
         }
     }
 
