@@ -2,25 +2,46 @@ package com.tungsten.fcl.control
 
 import java.util.Locale
 
-/** Bir sesli komutun çözümlenmiş sonucu. */
+/** Bir sesli komuttan çözümlenen tek bir eylem. Tek bir cümlede birden fazla eylem
+ * olabilir (ör. "zıpla w tuşuna bas" -> [Tap(space), Hold(w)]). */
 sealed class VoiceCommandResult {
-    /** Belirli bir Minecraft tuş bağlamasına (ör. "key.keyboard.w", "key.mouse.right") basılsın. */
-    data class Press(val binding: String) : VoiceCommandResult()
+    /** Kısa bas-bırak (F3, envanter, sohbet, zıpla, tıklama... aç/kapa tuşları). */
+    data class Tap(val binding: String) : VoiceCommandResult()
+
+    /** Basılı tut, açık bırak (W/A/S/D yürüme, sol tık kazma, shift/ctrl) - [Release] veya
+     * [ReleaseAll] gelene kadar bırakılmaz. */
+    data class Hold(val binding: String) : VoiceCommandResult()
+
+    /** Daha önce [Hold] ile basılı tutulan belirli bir tuşu bırakır. */
+    data class Release(val binding: String) : VoiceCommandResult()
+
+    /** O an basılı tutulan tüm tuşları bırakır (ör. bağımsız "dur" komutu). */
+    object ReleaseAll : VoiceCommandResult()
 
     /** Hedef belirtilmeden söylenen "kapat" gibi bir komut: en son basılan tuşu tekrar bas
      * (F3/envanter/sohbet gibi aç-kapa tuşları aynı tuşa ikinci kez basılınca kapanır). */
     object RepeatLast : VoiceCommandResult()
+
+    /** Sohbeti aç, metni yaz ve gönder (ör. "sohbeti aç merhaba yaz gönder"). */
+    data class Chat(val message: String) : VoiceCommandResult()
 }
 
 /**
  * Türkçe sesli komutları Minecraft tuş bağlama adlarına (MinecraftKeyBindingMapper ile
- * FCLKeycodes'a çözümlenir) eşler. İki katmanlı çalışır:
- * 1) Sabit deyimler (ör. "zıpla", "envanteri aç") - [PHRASE_ALIASES]
- * 2) Genel tuş adı tanıma (ör. "w'ya bas", "sağ shift'e bas", "sağ tıkla") - [KEY_NAMES]
- * Böylece her tek harf/rakam/F tuşu/fare tuşu, özel bir deyim tanımlamaya gerek kalmadan
- * "<tuş adı> bas/tıkla" kalıbıyla otomatik olarak çalışır.
+ * FCLKeycodes'a çözümlenir) eşler. Tek bir cümlede birden fazla komut olabileceğinden
+ * [match] bir liste döner ("zıpla w tuşuna bas" -> zıpla + w basılı tut).
  */
 object VoiceCommands {
+
+    /** W/A/S/D gibi yürüme tuşları ile sol tık (kazma/vurma) ve shift/ctrl: bunlar
+     * Minecraft'ta anlamlı olması için basılı tutulması gereken eylemlerdir, bu yüzden
+     * genel "<tuş> bas" kalıbıyla eşleştiklerinde kısa vuruş yerine [Hold] üretilir. */
+    private val HOLDABLE = setOf(
+        "key.keyboard.w", "key.keyboard.a", "key.keyboard.s", "key.keyboard.d",
+        "key.mouse.left",
+        "key.keyboard.left.shift", "key.keyboard.right.shift",
+        "key.keyboard.left.control", "key.keyboard.right.control",
+    )
 
     /** Türkçe tuş adı (normalize edilmiş) -> Minecraft tuş bağlama adı. Çok kelimeli adlar
      * (ör. "sağ shift") tek kelimelilerden ([match] içinde) önce denenir. */
@@ -28,9 +49,9 @@ object VoiceCommands {
         for (c in 'a'..'z') put(c.toString(), "key.keyboard.$c")
         for (n in 0..9) put(n.toString(), "key.keyboard.$n")
 
-        // Latince harflerin Türkçe'de sık söylenen telaffuzları (STT çoğu zaman harfi
-        // doğrudan yazıya döker, ama bazı harfler için telaffuz da yaygın kullanılıyor)
-        put("dabılyu", "key.keyboard.w"); put("dabılvı", "key.keyboard.w"); put("çift ve", "key.keyboard.w")
+        // Latince harflerin Türkçe'de sık söylenen/karıştırılan telaffuzları
+        put("dabılyu", "key.keyboard.w"); put("dabılvı", "key.keyboard.w")
+        put("dabl", "key.keyboard.w"); put("çift ve", "key.keyboard.w")
         put("ıks", "key.keyboard.x"); put("iks", "key.keyboard.x")
         put("kyu", "key.keyboard.q"); put("kü", "key.keyboard.q")
 
@@ -71,7 +92,6 @@ object VoiceCommands {
         "zıpla" to "boşluk", "atla" to "boşluk",
         "envanteri aç" to "e", "envanter aç" to "e", "envanteri kapat" to "e",
         "envanter kapat" to "e", "çantayı aç" to "e", "çantayı kapat" to "e",
-        "sohbeti aç" to "t", "sohbet aç" to "t", "mesaj yaz" to "t", "chat aç" to "t",
         "eşyayı at" to "q", "eşya at" to "q", "düşür" to "q",
         "perspektifi değiştir" to "f5", "kamera değiştir" to "f5",
         "menüyü aç" to "esc", "menüyü kapat" to "esc",
@@ -84,48 +104,113 @@ object VoiceCommands {
     )
 
     /** Hedef belirtilmeyen, "en son basılanı tekrar et" anlamına gelen bağımsız ifadeler. */
-    private val REPEAT_LAST_PHRASES = listOf("kapat", "şimdi kapat", "onu kapat", "tekrar bas", "bir daha bas")
+    private val REPEAT_LAST_PHRASES = setOf("kapat", "şimdi kapat", "onu kapat", "tekrar bas", "bir daha bas")
+
+    /** Basılı tutulan her şeyi bırakan bağımsız ifadeler. */
+    private val RELEASE_ALL_PHRASES = setOf("dur", "durdur", "bırak", "hepsini bırak")
+
+    /** Bir tuşu basılı tutmayı bırakmak için kullanılan fiiller. */
+    private val RELEASE_VERBS = setOf("bırak", "bırakıyor", "serbest bırak")
 
     /** "bas/tıkla" gibi bir fiil içeren komutlar. Tek harfli tuş adları ("a", "e", "o" gibi
      * gerçek Türkçe kelimelerle çakışabilen) yalnızca bu fiillerden biri de söylendiğinde
      * eşleşir; böylece sıradan konuşma yanlışlıkla tuşa basmaz. Çok karakterli adlar
-     * (f3, shift, sağ tık…) zaten yeterince kendine özgü olduğu için bu şart aranmaz.
-     */
-    private val TRIGGER_VERBS = listOf("bas", "basar", "basıyor", "tıkla", "tıklar", "tuşuna", "tuşunu")
+     * (f3, shift, sağ tık…) zaten yeterince kendine özgü olduğu için bu şart aranmaz. */
+    private val TRIGGER_VERBS = setOf("bas", "basar", "basıyor", "tıkla", "tıklar", "tuşuna", "tuşunu")
 
-    fun match(recognizedText: String): VoiceCommandResult? {
+    /** W/A/S/D özellikle bare (fiilsiz) söylenince de çalışır - kullanıcı isteği bu yönde
+     * ("wasd'den birisine bahsedeyim de basabilsin") ve zaten oyun sırasında sürekli tek
+     * başına anılan hareket tuşlarıdır; diğer tek harfler (özellikle "a"/"e"/"o" gibi
+     * gerçek Türkçe kelimeler) yine de [TRIGGER_VERBS] gerektirir. */
+    private val ALWAYS_BARE_LETTERS = setOf("w", "a", "s", "d")
+
+    /** "sohbeti aç <mesaj> yaz [gönder]" kalıbı. Türkçe ekli fiil biçimleri (ör. "açıyor")
+     * yerine emir kipi ("aç"/"yaz") beklenir; sesli komutlarda doğal olan budur. */
+    private val CHAT_PATTERN =
+        Regex("""(sohbeti|sohbet|chat)\s+aç\s+(.+?)\s+yaz(\s+gönder)?$""")
+
+    fun match(recognizedText: String): List<VoiceCommandResult> {
         val normalized = normalize(recognizedText)
 
-        for (phrase in REPEAT_LAST_PHRASES) {
-            if (normalized == phrase || normalized == "$phrase.") {
-                return VoiceCommandResult.RepeatLast
+        CHAT_PATTERN.find(normalized)?.let { m ->
+            val message = m.groupValues[2].trim()
+            if (message.isNotEmpty()) {
+                return listOf(VoiceCommandResult.Chat(message))
             }
         }
 
-        for ((phrase, keyName) in PHRASE_ALIASES) {
-            if (normalized.contains(phrase)) {
-                KEY_NAMES[keyName]?.let { return VoiceCommandResult.Press(it) }
+        if (normalized in RELEASE_ALL_PHRASES) {
+            return listOf(VoiceCommandResult.ReleaseAll)
+        }
+        if (normalized in REPEAT_LAST_PHRASES) {
+            return listOf(VoiceCommandResult.RepeatLast)
+        }
+
+        // Java/Kotlin regex \b Türkçe harfleri (ı, ş, ğ, ç, ö, ü) varsayılan olarak "kelime
+        // karakteri" saymadığından \b burada kullanılmıyor; bunun yerine kelimelere ayırıp
+        // (tek ve iki kelimelik) tam eşleşme aranıyor.
+        val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val rawPairs = rawTokens.zipWithNext { a, b -> "$a $b" }
+
+        // Aynı cümlede yalnızca tek bir aç/kapa yönü uygulanır (ör. "w bas a'yı bırak"
+        // gibi karışık cümleler desteklenmez); "bırak" geçerse tüm eylemler bırakma olur.
+        val isRelease = rawTokens.any { it in RELEASE_VERBS } || rawPairs.any { it in RELEASE_VERBS }
+        // Tek harfli tuş adları için "niyet" sinyali: ya bas/tıkla fiili ya da (bırakma
+        // durumunda) bırak fiili - ikisi de "bu bir rastgele hece değil, bilinçli bir tuş
+        // adı" anlamına gelir.
+        val hasTriggerVerb = isRelease || rawTokens.any { it in TRIGGER_VERBS }
+
+        val results = mutableListOf<VoiceCommandResult>()
+        var remaining = normalized
+
+        // En uzun deyimler önce denenir ki örneğin "f3'ü kapat" hem PHRASE_ALIASES'ta
+        // hem de aşağıdaki genel "f3" tuş adı eşleşmesinde ayrı ayrı sayılıp çift
+        // basmasın: eşleşen deyimin metni burada tüketilip metinden çıkarılıyor.
+        for ((phrase, keyName) in PHRASE_ALIASES.entries.sortedByDescending { it.key.length }) {
+            if (remaining.contains(phrase)) {
+                KEY_NAMES[keyName]?.let { results += toAction(it, isRelease) }
+                remaining = remaining.replace(phrase, " ")
             }
         }
 
-        // Genel tanıma: "<tuş adı> bas/tıkla" kalıbı - metni kelimelere ayırıp (kesme
-        // işareti ekini atarak) 2 kelimelik ("sağ shift") ve 1 kelimelik pencerelerde ara.
-        val tokens = normalized.split(Regex("\\s+")).map { it.replace(Regex("'.*$"), "") }
-        val hasTriggerVerb = tokens.any { it in TRIGGER_VERBS }
+        // Genel tanıma: kalan metinde "<tuş adı> bas/tıkla/bırak" kalıbı - 2 kelimelik
+        // ("sağ shift") pencereleri önce, sonra tek kelimelik tuş adlarını dener.
+        val tokens = remaining.split(Regex("\\s+"))
+            .filter { it.isNotEmpty() }
+            .map { it.replace(Regex("'.*$"), "") }
 
-        for (i in tokens.indices) {
-            if (i + 1 < tokens.size) {
+        val consumed = BooleanArray(tokens.size)
+        var i = 0
+        while (i < tokens.size) {
+            if (consumed[i]) {
+                i++; continue
+            }
+            if (i + 1 < tokens.size && !consumed[i + 1]) {
                 val twoWord = "${tokens[i]} ${tokens[i + 1]}"
-                KEY_NAMES[twoWord]?.let { return VoiceCommandResult.Press(it) }
+                val binding = KEY_NAMES[twoWord]
+                if (binding != null) {
+                    results += toAction(binding, isRelease)
+                    consumed[i] = true; consumed[i + 1] = true
+                    i += 2
+                    continue
+                }
             }
-        }
-        for (token in tokens) {
-            val binding = KEY_NAMES[token] ?: continue
-            if (token.length == 1 && !hasTriggerVerb) continue
-            return VoiceCommandResult.Press(binding)
+            val token = tokens[i]
+            val binding = KEY_NAMES[token]
+            val needsVerb = token.length == 1 && token !in ALWAYS_BARE_LETTERS && !hasTriggerVerb
+            if (binding != null && !needsVerb) {
+                results += toAction(binding, isRelease)
+                consumed[i] = true
+            }
+            i++
         }
 
-        return null
+        return results
+    }
+
+    private fun toAction(binding: String, isRelease: Boolean): VoiceCommandResult {
+        if (isRelease) return VoiceCommandResult.Release(binding)
+        return if (binding in HOLDABLE) VoiceCommandResult.Hold(binding) else VoiceCommandResult.Tap(binding)
     }
 
     private fun normalize(text: String): String {

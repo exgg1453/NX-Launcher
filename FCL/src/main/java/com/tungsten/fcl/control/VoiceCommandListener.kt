@@ -10,6 +10,8 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
+import com.tungsten.fcl.setting.GameOption
+import com.tungsten.fclauncher.keycodes.FCLKeycodes
 import com.tungsten.fclauncher.keycodes.MinecraftKeyBindingMapper
 import com.tungsten.fcllibrary.component.FCLActivity
 import com.tungsten.fclcore.task.Schedulers
@@ -24,15 +26,20 @@ import java.util.logging.Level
  */
 class VoiceCommandListener(
     private val activity: FCLActivity,
-    private val input: FCLInput
+    private val input: FCLInput,
+    private val gameOption: GameOption?
 ) : RecognitionListener {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var stopped = true
 
-    /** En son basılan tuş bağlaması; hedefsiz "kapat" komutu bunu tekrar basar. */
-    private var lastBinding: String? = null
+    /** En son basılan/bırakılan tek seferlik (tap) tuş bağlaması; hedefsiz "kapat" komutu
+     * bunu tekrar basar. */
+    private var lastTapBinding: String? = null
+
+    /** Şu an basılı tutulan (Hold ile başlatılan) tuşlar: bağlama adı -> gönderilen keycode. */
+    private val heldBindings = HashMap<String, Int>()
 
     fun start() {
         if (!stopped) return
@@ -64,6 +71,7 @@ class VoiceCommandListener(
             }
             recognizer = null
         }
+        releaseAll()
     }
 
     private fun listenOnce() {
@@ -81,20 +89,34 @@ class VoiceCommandListener(
         }
     }
 
-    /** Hata/no-match sonrası kısa gecikmeyle yeniden dinlemeye başlar; sıkı döngüyü önler. */
+    /** Yalnızca hata/no-match sonrası kısa gecikmeyle yeniden dinlemeye başlar (sıkı hata
+     * döngüsünü önler); başarılı bir sonuçtan sonra [listenOnce] doğrudan çağrılır, art arda
+     * söylenen komutların ("zıpla", "zıpla", "zıpla"...) arasında gecikme birikmesin diye. */
     private fun scheduleRestart() {
         if (stopped) return
         mainHandler.postDelayed({ listenOnce() }, 400)
     }
 
-    private fun triggerCommand(recognizedText: String) {
-        val result = VoiceCommands.match(recognizedText) ?: return
-        val binding = when (result) {
-            is VoiceCommandResult.Press -> result.binding
-            VoiceCommandResult.RepeatLast -> lastBinding
-        } ?: return
+    private fun triggerCommands(recognizedText: String) {
+        for (result in VoiceCommands.match(recognizedText)) {
+            applyCommand(result)
+        }
+    }
+
+    private fun applyCommand(result: VoiceCommandResult) {
+        when (result) {
+            is VoiceCommandResult.Tap -> tap(result.binding)
+            is VoiceCommandResult.Hold -> hold(result.binding)
+            is VoiceCommandResult.Release -> release(result.binding)
+            VoiceCommandResult.ReleaseAll -> releaseAll()
+            VoiceCommandResult.RepeatLast -> lastTapBinding?.let { tap(it) }
+            is VoiceCommandResult.Chat -> sendChatMessage(result.message)
+        }
+    }
+
+    private fun tap(binding: String) {
         val keycode = resolveKeycode(binding) ?: return
-        lastBinding = binding
+        lastTapBinding = binding
         Schedulers.io().execute {
             input.sendKeyEvent(keycode, true)
             try {
@@ -102,6 +124,50 @@ class VoiceCommandListener(
             } catch (_: InterruptedException) {
             }
             input.sendKeyEvent(keycode, false)
+        }
+    }
+
+    private fun hold(binding: String) {
+        if (heldBindings.containsKey(binding)) return
+        val keycode = resolveKeycode(binding) ?: return
+        heldBindings[binding] = keycode
+        Schedulers.io().execute { input.sendKeyEvent(keycode, true) }
+    }
+
+    private fun release(binding: String) {
+        val keycode = heldBindings.remove(binding) ?: resolveKeycode(binding) ?: return
+        Schedulers.io().execute { input.sendKeyEvent(keycode, false) }
+    }
+
+    private fun releaseAll() {
+        if (heldBindings.isEmpty()) return
+        val keycodes = heldBindings.values.toList()
+        heldBindings.clear()
+        Schedulers.io().execute {
+            keycodes.forEach { input.sendKeyEvent(it, false) }
+        }
+    }
+
+    /** Sohbeti açar (kullanıcının ayarladığı tuşla, GameOption üzerinden), metni yazıp
+     * Enter'a basar - ControlButton'daki "Send Text" olay işleyicisiyle aynı zamanlama. */
+    private fun sendChatMessage(message: String) {
+        Schedulers.io().execute {
+            if (gameOption != null) {
+                input.sendBoundKeyEvent(gameOption, MinecraftKeyBindingMapper.BINDING_CHAT, FCLKeycodes.KEY_T, true)
+                input.sendBoundKeyEvent(gameOption, MinecraftKeyBindingMapper.BINDING_CHAT, FCLKeycodes.KEY_T, false)
+            } else {
+                input.sendKeyEvent(FCLKeycodes.KEY_T, true)
+                input.sendKeyEvent(FCLKeycodes.KEY_T, false)
+            }
+            try {
+                Thread.sleep(150)
+            } catch (_: InterruptedException) {
+            }
+            for (c in message) {
+                input.sendChar(c)
+            }
+            input.sendKeyEvent(FCLKeycodes.KEY_ENTER, true)
+            input.sendKeyEvent(FCLKeycodes.KEY_ENTER, false)
         }
     }
 
@@ -124,8 +190,8 @@ class VoiceCommandListener(
     override fun onResults(results: Bundle) {
         results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             ?.firstOrNull()
-            ?.let { triggerCommand(it) }
-        scheduleRestart()
+            ?.let { triggerCommands(it) }
+        listenOnce()
     }
 
     override fun onError(error: Int) {
