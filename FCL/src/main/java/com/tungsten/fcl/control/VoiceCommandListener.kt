@@ -15,14 +15,16 @@ import com.tungsten.fclauncher.keycodes.FCLKeycodes
 import com.tungsten.fclauncher.keycodes.MinecraftKeyBindingMapper
 import com.tungsten.fclcore.task.Schedulers
 import com.tungsten.fclcore.util.Logging
+import com.tungsten.fcllibrary.util.LocaleUtils
 import java.util.logging.Level
 
 /**
- * Oyun sırasında sürekli dinleyip Türkçe sesli komutları (bkz. [VoiceCommands]) oyuna
- * tuş bastırma/bırakma veya bakış açısı döndürme olarak ileten yardımcı sınıf. Yalnızca
- * ayarlardan açıldığında ve RECORD_AUDIO izni verildiğinde [start] ile etkinleştirilir;
- * [stop] ile tamamen kapatılır. SpeechRecognizer çağrıları ana iş parçacığında
- * (Looper.getMainLooper) yapılmalıdır.
+ * Oyun sırasında sürekli dinleyip Türkçe/İngilizce sesli komutları (bkz. [VoiceCommands])
+ * oyuna tuş bastırma/bırakma veya bakış açısı döndürme olarak ileten yardımcı sınıf.
+ * Tanınan dil, başlatıcının dil ayarına göre [recognitionLanguage] tarafından seçilir.
+ * Yalnızca ayarlardan açıldığında ve RECORD_AUDIO izni verildiğinde [start] ile
+ * etkinleştirilir; [stop] ile tamamen kapatılır. SpeechRecognizer çağrıları ana iş
+ * parçacığında (Looper.getMainLooper) yapılmalıdır.
  */
 class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
 
@@ -81,7 +83,7 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
         if (stopped) return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
         }
         try {
@@ -90,6 +92,14 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
             Logging.LOG.log(Level.WARNING, "VoiceCommandListener: failed to start listening", e)
             scheduleRestart()
         }
+    }
+
+    /** Başlatıcının dil ayarını takip eder: İngilizce seçiliyse İngilizce, aksi halde
+     * (Türkçe veya diğer diller) Türkçe tanıma kullanılır - [VoiceCommands] her ikisini
+     * de anlıyor, ama SpeechRecognizer'ın doğruluğu doğru dili seçmekle çok artıyor. */
+    private fun recognitionLanguage(): String {
+        val locale = LocaleUtils.getLocale(LocaleUtils.getLanguage(activity))
+        return if (locale.language == "en") "en-US" else "tr-TR"
     }
 
     /** Yalnızca hata/no-match sonrası kısa gecikmeyle yeniden dinlemeye başlar (sıkı hata

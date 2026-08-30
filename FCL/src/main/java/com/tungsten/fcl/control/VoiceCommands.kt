@@ -32,9 +32,11 @@ sealed class VoiceCommandResult {
 }
 
 /**
- * Türkçe sesli komutları Minecraft tuş bağlama adlarına (MinecraftKeyBindingMapper ile
- * FCLKeycodes'a çözümlenir) eşler. Tek bir cümlede birden fazla komut olabileceğinden
- * [match] bir liste döner ("zıpla w tuşuna bas" -> zıpla + w basılı tut).
+ * Türkçe ve İngilizce sesli komutları Minecraft tuş bağlama adlarına (MinecraftKeyBindingMapper
+ * ile FCLKeycodes'a çözümlenir) eşler - hangi dilin tanındığı [VoiceCommandListener]'ın
+ * başlatıcı dil ayarına göre seçtiği SpeechRecognizer diline bağlıdır, ama buradaki eşleştirme
+ * ikisini de anlar. Tek bir cümlede birden fazla komut olabileceğinden [match] bir liste
+ * döner ("zıpla w tuşuna bas" / "jump press w" -> zıpla + w basılı tut).
  */
 object VoiceCommands {
 
@@ -48,8 +50,9 @@ object VoiceCommands {
         "key.keyboard.left.control", "key.keyboard.right.control",
     )
 
-    /** Türkçe tuş adı (normalize edilmiş) -> Minecraft tuş bağlama adı. Çok kelimeli adlar
-     * (ör. "sağ shift") tek kelimelilerden ([match] içinde) önce denenir. */
+    /** Türkçe/İngilizce tuş adı (normalize edilmiş) -> Minecraft tuş bağlama adı. Çok
+     * kelimeli adlar (ör. "sağ shift"/"right shift") tek kelimelilerden ([match] içinde)
+     * önce denenir. */
     private val KEY_NAMES: Map<String, String> = buildMap {
         for (c in 'a'..'z') put(c.toString(), "key.keyboard.$c")
         for (n in 0..9) put(n.toString(), "key.keyboard.$n")
@@ -66,6 +69,8 @@ object VoiceCommands {
         put("aşağı", "key.keyboard.down"); put("aşağı ok", "key.keyboard.down")
         put("sol ok", "key.keyboard.left")
         put("sağ ok", "key.keyboard.right")
+        put("up arrow", "key.keyboard.up"); put("down arrow", "key.keyboard.down")
+        put("left arrow", "key.keyboard.left"); put("right arrow", "key.keyboard.right")
 
         put("sağ shift", "key.keyboard.right.shift")
         put("sol shift", "key.keyboard.left.shift")
@@ -76,6 +81,11 @@ object VoiceCommands {
         put("sağ alt", "key.keyboard.right.alt")
         put("sol alt", "key.keyboard.left.alt")
         put("alt", "key.keyboard.left.alt")
+        put("right shift", "key.keyboard.right.shift"); put("left shift", "key.keyboard.left.shift")
+        put("right control", "key.keyboard.right.control"); put("right ctrl", "key.keyboard.right.control")
+        put("left control", "key.keyboard.left.control"); put("left ctrl", "key.keyboard.left.control")
+        put("control", "key.keyboard.left.control")
+        put("right alt", "key.keyboard.right.alt"); put("left alt", "key.keyboard.left.alt")
 
         put("boşluk", "key.keyboard.space"); put("boşluğa", "key.keyboard.space")
         put("enter", "key.keyboard.enter"); put("giriş", "key.keyboard.enter")
@@ -83,45 +93,65 @@ object VoiceCommands {
         put("tab", "key.keyboard.tab")
         put("backspace", "key.keyboard.backspace"); put("sil", "key.keyboard.backspace")
         put("caps lock", "key.keyboard.caps.lock")
+        put("space", "key.keyboard.space"); put("spacebar", "key.keyboard.space")
+        put("escape", "key.keyboard.escape")
+        put("delete", "key.keyboard.delete")
 
         put("sol tık", "key.mouse.left"); put("sol tıkla", "key.mouse.left")
         put("sol fare", "key.mouse.left"); put("sol tık at", "key.mouse.left")
         put("sağ tık", "key.mouse.right"); put("sağ tıkla", "key.mouse.right")
         put("sağ fare", "key.mouse.right"); put("sağ tık at", "key.mouse.right")
         put("orta tık", "key.mouse.middle"); put("orta tıkla", "key.mouse.middle")
+        put("left click", "key.mouse.left"); put("right click", "key.mouse.right")
+        put("middle click", "key.mouse.middle")
     }
 
     /** Sabit deyimler -> [KEY_NAMES] anahtarı. Aynı tuş için aç/kapat ikisi de aynı deyime
      * bağlanır, çünkü bu tuşların hepsi Minecraft'ta tek başlarına aç/kapa (toggle) tuşudur. */
     private val PHRASE_ALIASES: Map<String, String> = mapOf(
-        "zıpla" to "boşluk", "atla" to "boşluk",
+        "zıpla" to "boşluk", "atla" to "boşluk", "jump" to "space",
         "envanteri aç" to "e", "envanter aç" to "e", "envanteri kapat" to "e",
         "envanter kapat" to "e", "çantayı aç" to "e", "çantayı kapat" to "e",
+        "open inventory" to "e", "close inventory" to "e",
         "eşyayı at" to "q", "eşya at" to "q", "düşür" to "q",
+        "drop item" to "q", "throw item" to "q", "drop" to "q",
         "perspektifi değiştir" to "f5", "kamera değiştir" to "f5",
+        "change perspective" to "f5", "change camera" to "f5",
         "menüyü aç" to "esc", "menüyü kapat" to "esc",
+        "open menu" to "esc", "close menu" to "esc",
         "hata ayıklama ekranı" to "f3", "hata ayıklama ekranını aç" to "f3",
         "hata ayıklama ekranını kapat" to "f3", "debug ekranı" to "f3",
         "debug ekranını aç" to "f3", "debug ekranını kapat" to "f3", "f3'ü kapat" to "f3",
+        "debug screen" to "f3", "open debug screen" to "f3", "close debug screen" to "f3",
         "ekran görüntüsü al" to "f2", "ekran görüntüsü" to "f2",
+        "take screenshot" to "f2", "screenshot" to "f2",
         "eğil" to "sol shift", "sinsi yürü" to "sol shift", "gizlen" to "sol shift",
+        "crouch" to "left shift", "sneak" to "left shift",
         "koş" to "sol kontrol", "koşmaya başla" to "sol kontrol", "sprint" to "sol kontrol",
+        "run" to "left control",
     )
 
     /** Hedef belirtilmeyen, "en son basılanı tekrar et" anlamına gelen bağımsız ifadeler. */
-    private val REPEAT_LAST_PHRASES = setOf("kapat", "şimdi kapat", "onu kapat", "tekrar bas", "bir daha bas")
+    private val REPEAT_LAST_PHRASES = setOf(
+        "kapat", "şimdi kapat", "onu kapat", "tekrar bas", "bir daha bas",
+        "close", "close it", "press again",
+    )
 
     /** Basılı tutulan her şeyi bırakan bağımsız ifadeler. */
-    private val RELEASE_ALL_PHRASES = setOf("dur", "durdur", "bırak", "hepsini bırak")
+    private val RELEASE_ALL_PHRASES = setOf("dur", "durdur", "bırak", "hepsini bırak", "stop", "release", "release all")
 
     /** Bir tuşu basılı tutmayı bırakmak için kullanılan fiiller. */
-    private val RELEASE_VERBS = setOf("bırak", "bırakıyor", "serbest bırak")
+    private val RELEASE_VERBS = setOf("bırak", "bırakıyor", "serbest bırak", "release", "let go")
 
-    /** "bas/tıkla" gibi bir fiil içeren komutlar. Tek harfli tuş adları ("a", "e", "o" gibi
-     * gerçek Türkçe kelimelerle çakışabilen) yalnızca bu fiillerden biri de söylendiğinde
-     * eşleşir; böylece sıradan konuşma yanlışlıkla tuşa basmaz. Çok karakterli adlar
-     * (f3, shift, sağ tık…) zaten yeterince kendine özgü olduğu için bu şart aranmaz. */
-    private val TRIGGER_VERBS = setOf("bas", "basar", "basıyor", "tıkla", "tıklar", "tuşuna", "tuşunu")
+    /** "bas/tıkla"/"press/click" gibi bir fiil içeren komutlar. Tek harfli tuş adları
+     * ("a", "e", "o"/"a", "i" gibi gerçek Türkçe veya İngilizce kelimelerle çakışabilen)
+     * yalnızca bu fiillerden biri de söylendiğinde eşleşir; böylece sıradan konuşma
+     * yanlışlıkla tuşa basmaz. Çok karakterli adlar (f3, shift, sağ tık…) zaten yeterince
+     * kendine özgü olduğu için bu şart aranmaz. */
+    private val TRIGGER_VERBS = setOf(
+        "bas", "basar", "basıyor", "tıkla", "tıklar", "tuşuna", "tuşunu",
+        "press", "click", "hit", "key",
+    )
 
     /** W/A/S/D özellikle bare (fiilsiz) söylenince de çalışır - kullanıcı isteği bu yönde
      * ("wasd'den birisine bahsedeyim de basabilsin") ve zaten oyun sırasında sürekli tek
@@ -129,25 +159,38 @@ object VoiceCommands {
      * gerçek Türkçe kelimeler) yine de [TRIGGER_VERBS] gerektirir. */
     private val ALWAYS_BARE_LETTERS = setOf("w", "a", "s", "d")
 
-    /** "sohbeti aç <mesaj> yaz [gönder]" kalıbı. Türkçe ekli fiil biçimleri (ör. "açıyor")
-     * yerine emir kipi ("aç"/"yaz") beklenir; sesli komutlarda doğal olan budur. */
+    /** "sohbeti aç <mesaj> yaz [gönder]" / "open chat <message> type [send]" kalıpları.
+     * Türkçe ekli fiil biçimleri (ör. "açıyor") yerine emir kipi ("aç"/"yaz") beklenir;
+     * sesli komutlarda doğal olan budur. */
     private val CHAT_PATTERN =
         Regex("""(sohbeti|sohbet|chat)\s+aç\s+(.+?)\s+yaz(\s+gönder)?$""")
+    private val CHAT_PATTERN_EN =
+        Regex("""(open\s+chat|chat)\s+(.+?)\s+type(\s+(and\s+)?send)?$""")
 
     // --- Bakış açısı (kamera) döndürme ---
-    // "sağa/sağ bak", "sola/sol dön", "yukarı", "aşağı", ve bunların herhangi bir
-    // kombinasyonu (çapraz) - bir bakış fiili olmadan tetiklenmez, bu yüzden "sağ tık"
-    // gibi mevcut tuş deyimleriyle çakışmaz (onlarda "bak/dön/çevir" fiili yoktur).
-    private val LOOK_VERBS = setOf("bak", "dön", "çevir", "döndür", "baksın", "dönsün", "çevirsin")
-    private val LOOK_RIGHT_WORDS = setOf("sağa", "sağ")
-    private val LOOK_LEFT_WORDS = setOf("sola", "sol")
-    private val LOOK_UP_WORDS = setOf("yukarı", "yukarıya", "yukari")
-    private val LOOK_DOWN_WORDS = setOf("aşağı", "aşağıya", "asagi")
+    // "sağa/sağ bak", "sola/sol dön", "yukarı", "aşağı", "look right", "turn left"... ve
+    // bunların herhangi bir kombinasyonu (çapraz) - bir bakış fiili olmadan tetiklenmez,
+    // bu yüzden "sağ tık"/"right click" gibi mevcut tuş deyimleriyle çakışmaz (onlarda
+    // "bak/dön/çevir"/"look/turn" fiili yoktur).
+    private val LOOK_VERBS = setOf(
+        "bak", "dön", "çevir", "döndür", "baksın", "dönsün", "çevirsin",
+        "look", "turn", "rotate", "spin",
+    )
+    private val LOOK_RIGHT_WORDS = setOf("sağa", "sağ", "right")
+    private val LOOK_LEFT_WORDS = setOf("sola", "sol", "left")
+    private val LOOK_UP_WORDS = setOf("yukarı", "yukarıya", "yukari", "up")
+    private val LOOK_DOWN_WORDS = setOf("aşağı", "aşağıya", "asagi", "down")
 
-    // "çok az" gibi 2 kelimelik ifadeler, tek başına "çok" (büyük dönüş anlamına gelir)
-    // ile çakışmasın diye önce denenir.
-    private val LOOK_TINY_PHRASES = listOf("çok az", "çok hafif", "birazcık", "azıcık", "hafifçe", "hafif", "biraz")
-    private val LOOK_LARGE_PHRASES = listOf("çok fazla", "fazlaca", "iyice", "büyük", "çok")
+    // "çok az"/"a little" gibi çok kelimeli ifadeler, tek başına "çok"/büyük dönüş anlamına
+    // gelen kelimelerle çakışmasın diye önce denenir.
+    private val LOOK_TINY_PHRASES = listOf(
+        "çok az", "çok hafif", "birazcık", "azıcık", "hafifçe", "hafif", "biraz",
+        "a little", "a little bit", "a tiny bit", "slightly", "a bit",
+    )
+    private val LOOK_LARGE_PHRASES = listOf(
+        "çok fazla", "fazlaca", "iyice", "büyük", "çok",
+        "a lot", "all the way", "fully", "far", "big turn",
+    )
 
     private const val LOOK_DELTA_TINY = 15
     private const val LOOK_DELTA_MEDIUM = 65
@@ -180,7 +223,7 @@ object VoiceCommands {
     fun match(recognizedText: String): List<VoiceCommandResult> {
         val normalized = normalize(recognizedText)
 
-        CHAT_PATTERN.find(normalized)?.let { m ->
+        (CHAT_PATTERN.find(normalized) ?: CHAT_PATTERN_EN.find(normalized))?.let { m ->
             val message = m.groupValues[2].trim()
             if (message.isNotEmpty()) {
                 return listOf(VoiceCommandResult.Chat(message))
