@@ -10,25 +10,24 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
-import com.tungsten.fcl.setting.GameOption
+import com.tungsten.fclauncher.bridge.FCLBridge
 import com.tungsten.fclauncher.keycodes.FCLKeycodes
 import com.tungsten.fclauncher.keycodes.MinecraftKeyBindingMapper
-import com.tungsten.fcllibrary.component.FCLActivity
 import com.tungsten.fclcore.task.Schedulers
 import com.tungsten.fclcore.util.Logging
 import java.util.logging.Level
 
 /**
  * Oyun sırasında sürekli dinleyip Türkçe sesli komutları (bkz. [VoiceCommands]) oyuna
- * tuş bastırma/bırakma olarak ileten yardımcı sınıf. Yalnızca ayarlardan açıldığında ve
- * RECORD_AUDIO izni verildiğinde [start] ile etkinleştirilir; [stop] ile tamamen kapatılır.
- * SpeechRecognizer çağrıları ana iş parçacığında (Looper.getMainLooper) yapılmalıdır.
+ * tuş bastırma/bırakma veya bakış açısı döndürme olarak ileten yardımcı sınıf. Yalnızca
+ * ayarlardan açıldığında ve RECORD_AUDIO izni verildiğinde [start] ile etkinleştirilir;
+ * [stop] ile tamamen kapatılır. SpeechRecognizer çağrıları ana iş parçacığında
+ * (Looper.getMainLooper) yapılmalıdır.
  */
-class VoiceCommandListener(
-    private val activity: FCLActivity,
-    private val input: FCLInput,
-    private val gameOption: GameOption?
-) : RecognitionListener {
+class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
+
+    private val activity = menu.getActivity()
+    private val input: FCLInput get() = menu.getInput()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
@@ -40,6 +39,10 @@ class VoiceCommandListener(
 
     /** Şu an basılı tutulan (Hold ile başlatılan) tuşlar: bağlama adı -> gönderilen keycode. */
     private val heldBindings = HashMap<String, Int>()
+
+    companion object {
+        private const val LOOK_POINTER_ID = "VoiceCommandLook"
+    }
 
     fun start() {
         if (!stopped) return
@@ -111,6 +114,39 @@ class VoiceCommandListener(
             VoiceCommandResult.ReleaseAll -> releaseAll()
             VoiceCommandResult.RepeatLast -> lastTapBinding?.let { tap(it) }
             is VoiceCommandResult.Chat -> sendChatMessage(result.message)
+            is VoiceCommandResult.Look -> applyLook(result.dx, result.dy)
+        }
+    }
+
+    /**
+     * Bakış açısını döndürür: TouchPad'in dokunmatik sürükleme sırasında yaptığının
+     * aynısı (setPointerId ile "sürükleyeni" bu çağrı olarak işaretleyip pointer'ı adım
+     * adım kaydırmak) - tek seferde büyük bir sıçrama yerine kısa adımlarla, doğal bir
+     * sürükleme hareketini taklit eder.
+     */
+    private fun applyLook(dx: Int, dy: Int) {
+        // Envanter/GUI gibi imleç modunda pointerX/Y gerçek (sınırlı) ekran koordinatıdır,
+        // kamera döndürme birikimcisi değil - bu modda bakış komutları anlamsız/zararlı
+        // olur (imleci rastgele bir yere sıçratabilir), bu yüzden yalnızca normal oyun
+        // görünümünde (imleç modu kapalıyken) çalışır.
+        if (menu.getCursorMode() == FCLBridge.CursorEnabled) return
+        Schedulers.io().execute {
+            val startX = menu.getPointerX()
+            val startY = menu.getPointerY()
+            val steps = 12
+            input.setPointerId(LOOK_POINTER_ID)
+            for (step in 1..steps) {
+                val x = startX + dx * step / steps
+                val y = startY + dy * step / steps
+                input.setPointer(x, y, LOOK_POINTER_ID)
+                try {
+                    Thread.sleep(12)
+                } catch (_: InterruptedException) {
+                }
+            }
+            if (LOOK_POINTER_ID == input.getPointerId()) {
+                input.setPointerId(null)
+            }
         }
     }
 
@@ -152,6 +188,7 @@ class VoiceCommandListener(
      * Enter'a basar - ControlButton'daki "Send Text" olay işleyicisiyle aynı zamanlama. */
     private fun sendChatMessage(message: String) {
         Schedulers.io().execute {
+            val gameOption = menu.getGameOption()
             if (gameOption != null) {
                 input.sendBoundKeyEvent(gameOption, MinecraftKeyBindingMapper.BINDING_CHAT, FCLKeycodes.KEY_T, true)
                 input.sendBoundKeyEvent(gameOption, MinecraftKeyBindingMapper.BINDING_CHAT, FCLKeycodes.KEY_T, false)

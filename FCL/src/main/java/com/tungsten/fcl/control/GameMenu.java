@@ -602,7 +602,7 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
         }
 
         if (!isSimulated()) {
-            voiceCommandListener = new VoiceCommandListener(activity, fclInput, gameOption);
+            voiceCommandListener = new VoiceCommandListener(this);
             SharedPreferences launcherPrefs = activity.getSharedPreferences("launcher", MODE_PRIVATE);
             if (launcherPrefs.getBoolean("voiceCommandsEnabled", false)) {
                 voiceCommandListener.start();

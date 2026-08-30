@@ -24,6 +24,11 @@ sealed class VoiceCommandResult {
 
     /** Sohbeti aç, metni yaz ve gönder (ör. "sohbeti aç merhaba yaz gönder"). */
     data class Chat(val message: String) : VoiceCommandResult()
+
+    /** Bakış açısını döndürür (ör. "sağa bak", "çok az sola dön"). dx/dy, sanal işaretçi
+     * üzerinde uygulanacak piksel cinsinden yatay/dikey kaydırma miktarıdır; pozitif dx
+     * sağa, pozitif dy aşağı bakışa karşılık gelir. */
+    data class Look(val dx: Int, val dy: Int) : VoiceCommandResult()
 }
 
 /**
@@ -129,6 +134,49 @@ object VoiceCommands {
     private val CHAT_PATTERN =
         Regex("""(sohbeti|sohbet|chat)\s+aç\s+(.+?)\s+yaz(\s+gönder)?$""")
 
+    // --- Bakış açısı (kamera) döndürme ---
+    // "sağa/sağ bak", "sola/sol dön", "yukarı", "aşağı", ve bunların herhangi bir
+    // kombinasyonu (çapraz) - bir bakış fiili olmadan tetiklenmez, bu yüzden "sağ tık"
+    // gibi mevcut tuş deyimleriyle çakışmaz (onlarda "bak/dön/çevir" fiili yoktur).
+    private val LOOK_VERBS = setOf("bak", "dön", "çevir", "döndür", "baksın", "dönsün", "çevirsin")
+    private val LOOK_RIGHT_WORDS = setOf("sağa", "sağ")
+    private val LOOK_LEFT_WORDS = setOf("sola", "sol")
+    private val LOOK_UP_WORDS = setOf("yukarı", "yukarıya", "yukari")
+    private val LOOK_DOWN_WORDS = setOf("aşağı", "aşağıya", "asagi")
+
+    // "çok az" gibi 2 kelimelik ifadeler, tek başına "çok" (büyük dönüş anlamına gelir)
+    // ile çakışmasın diye önce denenir.
+    private val LOOK_TINY_PHRASES = listOf("çok az", "çok hafif", "birazcık", "azıcık", "hafifçe", "hafif", "biraz")
+    private val LOOK_LARGE_PHRASES = listOf("çok fazla", "fazlaca", "iyice", "büyük", "çok")
+
+    private const val LOOK_DELTA_TINY = 15
+    private const val LOOK_DELTA_MEDIUM = 65
+    private const val LOOK_DELTA_LARGE = 220
+
+    private fun detectLook(normalized: String, rawTokens: List<String>): VoiceCommandResult.Look? {
+        if (rawTokens.none { it in LOOK_VERBS }) return null
+
+        val right = rawTokens.any { it in LOOK_RIGHT_WORDS }
+        val left = rawTokens.any { it in LOOK_LEFT_WORDS }
+        val up = rawTokens.any { it in LOOK_UP_WORDS }
+        val down = rawTokens.any { it in LOOK_DOWN_WORDS }
+        if (!right && !left && !up && !down) return null
+
+        val magnitude = when {
+            LOOK_TINY_PHRASES.any { normalized.contains(it) } -> LOOK_DELTA_TINY
+            LOOK_LARGE_PHRASES.any { normalized.contains(it) } -> LOOK_DELTA_LARGE
+            else -> LOOK_DELTA_MEDIUM
+        }
+
+        var dx = 0
+        var dy = 0
+        if (right) dx += magnitude
+        if (left) dx -= magnitude
+        if (down) dy += magnitude
+        if (up) dy -= magnitude
+        return VoiceCommandResult.Look(dx, dy)
+    }
+
     fun match(recognizedText: String): List<VoiceCommandResult> {
         val normalized = normalize(recognizedText)
 
@@ -139,6 +187,12 @@ object VoiceCommands {
             }
         }
 
+        // Java/Kotlin regex \b Türkçe harfleri (ı, ş, ğ, ç, ö, ü) varsayılan olarak "kelime
+        // karakteri" saymadığından \b burada kullanılmıyor; bunun yerine kelimelere ayırıp
+        // (tek ve iki kelimelik) tam eşleşme aranıyor.
+        val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        detectLook(normalized, rawTokens)?.let { return listOf(it) }
+
         if (normalized in RELEASE_ALL_PHRASES) {
             return listOf(VoiceCommandResult.ReleaseAll)
         }
@@ -146,10 +200,6 @@ object VoiceCommands {
             return listOf(VoiceCommandResult.RepeatLast)
         }
 
-        // Java/Kotlin regex \b Türkçe harfleri (ı, ş, ğ, ç, ö, ü) varsayılan olarak "kelime
-        // karakteri" saymadığından \b burada kullanılmıyor; bunun yerine kelimelere ayırıp
-        // (tek ve iki kelimelik) tam eşleşme aranıyor.
-        val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
         val rawPairs = rawTokens.zipWithNext { a, b -> "$a $b" }
 
         // Aynı cümlede yalnızca tek bir aç/kapa yönü uygulanır (ör. "w bas a'yı bırak"
