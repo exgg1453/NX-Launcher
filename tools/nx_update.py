@@ -6,6 +6,11 @@ Usage: python3 tools/nx_update.py
 Requires: git remotes 'origin' (the exgg1453/NX-Launcher fork) and
 'upstream' (FCL-Team/FoldCraftLauncher) already configured, and optionally
 the GitHub CLI ('gh', authenticated) to report the triggered build's status.
+
+Note: .github/workflows/nx-auto-sync.yml now does this automatically once a
+day. This script is only needed for a manual run (workflow_dispatch on that
+workflow does the same thing), or to resolve a merge conflict the automatic
+sync bailed out on.
 """
 
 import json
@@ -78,6 +83,12 @@ def main():
         sys.exit(1)
 
     print(f"Merged upstream/{upstream_branch} into {WORK_BRANCH} cleanly.")
+
+    print("Pointing version_map.json at our own release...")
+    run([sys.executable, str(REPO_ROOT / "tools" / "nx_fix_version_map.py")], capture=False)
+    if run(["git", "status", "--porcelain", "version_map.json"]):
+        run(["git", "add", "version_map.json"])
+        run(["git", "commit", "-m", "Auto-sync: point version_map.json at NX Launcher release"], capture=False)
 
     print(f"Pushing {WORK_BRANCH} to origin...")
     run(["git", "push", "origin", WORK_BRANCH], capture=False)

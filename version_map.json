@@ -14,7 +14,7 @@
         "text": "(若启动器内下载缓慢请使用网盘下载,64位的请下载arm64，不知道该下哪个的请下载all）\n1.微软登录实时显示各认证阶段进度\n2.语言切换立即生效（重建 Activity 应用新语言），不再需要重启启动器\n3.启动器/版本设置页设置项分组显示并带次要主题色分隔线，关于页链接行合并分组；新增深色模式主要主题色，设置页操作按钮改为图标\n4.游戏内菜单重构为 RecyclerView 多级菜单\n5.运行时安装页逐条目显示正在复制的文件等详细进度\n6.启动游戏未选中账户时提示并跳转账户管理页\n7.安装器进程通信改文件轮询，日志实时显示；修复多次创建安装进程时的卡死与误杀，进程超时自动重试\n8.内置浏览器改为默认缓存策略，退出时不再清除缓存\n9.修复切换游戏目录后模组下载位置与推荐版本未跟随新目录\n10.修复反复安装后 View 树泄漏（TaskDialog 监听引用链与临时页动画回调），消除累积卡顿\n11.修复版本设置页输入框失焦与部分定制 ROM 焦点移动崩溃\n12.修复布局编辑关闭后按键位置偏移、设置页主题模式切换卡顿、版本设置页控制器未初始化时显示默认名称\n13.修复整合包导出文件选择页滚动时监听器累积导致的 OOM 与外部应用调用安装整合包崩溃\n14.修复游标抓取回调竞态与空指针、游戏启动未应用 FPS/内存显示与持续性能模式开关、进度条设置进度未保存等问题"
       }
     ],
-    "netdiskUrl": "https://pan.quark.cn/s/fde4b68ceea0",
-    "url": "https://github.com/FCL-Team/FoldCraftLauncher/releases/download/1.3.2.9/FCL-release-1.3.2.9-all.apk"
+    "netdiskUrl": "https://github.com/exgg1453/NX-Launcher/releases/tag/nx-latest",
+    "url": "https://github.com/exgg1453/NX-Launcher/releases/download/nx-latest/FCL-fordebug-1.3.2.9-all.apk"
   }
 ]

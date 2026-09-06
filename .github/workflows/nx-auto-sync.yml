@@ -1,0 +1,72 @@
+name: NX Auto Sync
+
+# Runs on a schedule: checks FCL-Team's upstream repo for new commits, merges
+# them into nx-launcher automatically, rewrites version_map.json's download
+# URLs to point at our own NX Launcher release instead of upstream's, and (on
+# a clean merge) triggers NX Release to build and publish it.
+#
+# If the merge conflicts, this job fails without pushing anything - conflicts
+# still need tools/nx_update.py run by hand to resolve.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nx-launcher
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "nx-launcher-bot"
+          git config user.email "actions@github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/FCL-Team/FoldCraftLauncher.git
+          git fetch upstream
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          UPSTREAM_BRANCH=$(git remote show upstream | sed -n 's/.*HEAD branch: //p')
+          echo "branch=$UPSTREAM_BRANCH" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "upstream/$UPSTREAM_BRANCH" HEAD; then
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream changes
+        if: steps.check.outputs.has_update == 'true'
+        run: git merge "upstream/${{ steps.check.outputs.branch }}" --no-edit
+
+      - name: Point version_map.json at our own release
+        if: steps.check.outputs.has_update == 'true'
+        run: python3 tools/nx_fix_version_map.py
+
+      - name: Commit version_map.json fix (if it changed)
+        if: steps.check.outputs.has_update == 'true'
+        run: |
+          git add version_map.json
+          git diff --staged --quiet || git commit -m "Auto-sync: point version_map.json at NX Launcher release"
+
+      - name: Push nx-launcher
+        if: steps.check.outputs.has_update == 'true'
+        run: git push origin nx-launcher
+
+      - name: Trigger NX Release build
+        if: steps.check.outputs.has_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run nx-release.yml --ref nx-launcher
