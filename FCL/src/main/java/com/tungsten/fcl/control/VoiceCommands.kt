@@ -63,6 +63,13 @@ object VoiceCommands {
         put("ıks", "key.keyboard.x"); put("iks", "key.keyboard.x")
         put("kyu", "key.keyboard.q"); put("kü", "key.keyboard.q")
 
+        // Tanıyıcının Türkçe modda sık ürettiği yazımlar (yaklaşık eşleştirmenin
+        // yakalayamayacağı kadar uzak olanlar burada birebir tabloda tutuluyor)
+        put("şift", "key.keyboard.left.shift"); put("şıft", "key.keyboard.left.shift")
+        put("sağ şift", "key.keyboard.right.shift"); put("sol şift", "key.keyboard.left.shift")
+        put("kontırol", "key.keyboard.left.control"); put("kontrl", "key.keyboard.left.control")
+        put("espeys", "key.keyboard.space"); put("enter tuşu", "key.keyboard.enter")
+
         for (f in 1..12) put("f$f", "key.keyboard.f$f")
 
         put("yukarı", "key.keyboard.up"); put("yukarı ok", "key.keyboard.up")
@@ -197,7 +204,7 @@ object VoiceCommands {
     private const val LOOK_DELTA_LARGE = 220
 
     private fun detectLook(normalized: String, rawTokens: List<String>): VoiceCommandResult.Look? {
-        if (rawTokens.none { it in LOOK_VERBS }) return null
+        if (rawTokens.none { matchesAny(it, LOOK_VERBS) }) return null
 
         val right = rawTokens.any { it in LOOK_RIGHT_WORDS }
         val left = rawTokens.any { it in LOOK_LEFT_WORDS }
@@ -236,10 +243,10 @@ object VoiceCommands {
         val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
         detectLook(normalized, rawTokens)?.let { return listOf(it) }
 
-        if (normalized in RELEASE_ALL_PHRASES) {
+        if (normalized in RELEASE_ALL_PHRASES || closestMatch(normalized, RELEASE_ALL_PHRASES) != null) {
             return listOf(VoiceCommandResult.ReleaseAll)
         }
-        if (normalized in REPEAT_LAST_PHRASES) {
+        if (normalized in REPEAT_LAST_PHRASES || closestMatch(normalized, REPEAT_LAST_PHRASES) != null) {
             return listOf(VoiceCommandResult.RepeatLast)
         }
 
@@ -247,11 +254,12 @@ object VoiceCommands {
 
         // Aynı cümlede yalnızca tek bir aç/kapa yönü uygulanır (ör. "w bas a'yı bırak"
         // gibi karışık cümleler desteklenmez); "bırak" geçerse tüm eylemler bırakma olur.
-        val isRelease = rawTokens.any { it in RELEASE_VERBS } || rawPairs.any { it in RELEASE_VERBS }
+        val isRelease = rawTokens.any { matchesAny(it, RELEASE_VERBS) } ||
+                rawPairs.any { it in RELEASE_VERBS }
         // Tek harfli tuş adları için "niyet" sinyali: ya bas/tıkla fiili ya da (bırakma
         // durumunda) bırak fiili - ikisi de "bu bir rastgele hece değil, bilinçli bir tuş
         // adı" anlamına gelir.
-        val hasTriggerVerb = isRelease || rawTokens.any { it in TRIGGER_VERBS }
+        val hasTriggerVerb = isRelease || rawTokens.any { matchesAny(it, TRIGGER_VERBS) }
 
         val results = mutableListOf<VoiceCommandResult>()
         var remaining = normalized
@@ -280,7 +288,7 @@ object VoiceCommands {
             }
             if (i + 1 < tokens.size && !consumed[i + 1]) {
                 val twoWord = "${tokens[i]} ${tokens[i + 1]}"
-                val binding = KEY_NAMES[twoWord]
+                val binding = lookupKeyName(twoWord, hasTriggerVerb)
                 if (binding != null) {
                     results += toAction(binding, isRelease)
                     consumed[i] = true; consumed[i + 1] = true
@@ -289,7 +297,7 @@ object VoiceCommands {
                 }
             }
             val token = tokens[i]
-            val binding = KEY_NAMES[token]
+            val binding = lookupKeyName(token, hasTriggerVerb)
             val needsVerb = token.length == 1 && token !in ALWAYS_BARE_LETTERS && !hasTriggerVerb
             if (binding != null && !needsVerb) {
                 results += toAction(binding, isRelease)
@@ -309,4 +317,87 @@ object VoiceCommands {
     private fun normalize(text: String): String {
         return text.lowercase(Locale("tr")).trim().trimEnd('.', '!', '?')
     }
+
+    // --- Esnek (yaklaşık) eşleştirme -------------------------------------------------
+    //
+    // Konuşma tanıma çıktısı nadiren tabloya birebir uyar: ek düşer/eklenir ("envanteri"
+    // yerine "envanterı"), tanıyıcı harf karıştırır ("şift" / "shift"), kullanıcı kelimeyi
+    // biraz farklı söyler. Bu yüzden tam eşleşme başarısız olduğunda kelimeler Levenshtein
+    // mesafesiyle tablodaki adlara yaklaştırılır.
+    //
+    // Eşik bilerek dar tutuldu: kısa adlarda hiç, orta uzunlukta 1, uzun adlarda 2 harf.
+    // Amaç sıradan konuşmanın yanlışlıkla tuşa basmasını önlemek - tek harfli tuş adları
+    // (a/e/o gibi gerçek kelimeler) yaklaşık eşleştirmeye hiç sokulmaz.
+
+    /** Bir kelimenin yaklaşık eşleşme için kabul edeceği en fazla harf farkı. */
+    private fun maxDistanceFor(word: String): Int = when {
+        word.length <= 3 -> 0
+        word.length <= 6 -> 1
+        else -> 2
+    }
+
+    /** Klasik Levenshtein düzenleme mesafesi; [limit] aşılırsa erken çıkar (limit + 1 döner). */
+    private fun editDistance(a: String, b: String, limit: Int): Int {
+        if (a == b) return 0
+        if (kotlin.math.abs(a.length - b.length) > limit) return limit + 1
+        var prev = IntArray(b.length + 1) { it }
+        var cur = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            cur[0] = i
+            var rowMin = cur[0]
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+                if (cur[j] < rowMin) rowMin = cur[j]
+            }
+            if (rowMin > limit) return limit + 1
+            val tmp = prev; prev = cur; cur = tmp
+        }
+        return prev[b.length]
+    }
+
+    /**
+     * [candidates] içinde [word]'e en yakın olanı döner; hiçbiri eşiğin içinde değilse null.
+     * Beraberlik durumunda eşleşme belirsiz sayılır ve null dönülür - yanlış tuşa basmaktansa
+     * hiç basmamak yeğdir.
+     */
+    private fun closestMatch(word: String, candidates: Iterable<String>): String? {
+        val limit = maxDistanceFor(word)
+        if (limit == 0) return null
+        var best: String? = null
+        var bestDistance = limit + 1
+        var tied = false
+        for (candidate in candidates) {
+            // Tek harfli tuş adları gerçek kelimelerle çakışır, yaklaşık eşleşmeye girmezler
+            if (candidate.length <= 3) continue
+            val d = editDistance(word, candidate, limit)
+            if (d > limit) continue
+            when {
+                d < bestDistance -> {
+                    bestDistance = d; best = candidate; tied = false
+                }
+                d == bestDistance -> tied = true
+            }
+        }
+        return if (tied) null else best
+    }
+
+    /**
+     * Tuş bağlaması bulur. Tam eşleşme her zaman geçerlidir; yaklaşık eşleşme yalnızca
+     * cümlede bir niyet fiili ("bas", "tıkla", "bırak"...) varsa denenir.
+     *
+     * Bu şart olmadan yaklaşık eşleşme sıradan konuşmayı tuşa çevirir: "yukarıda bekle"
+     * cümlesindeki "yukarıda", "yukarı" tuş adına bir harf uzaklıkta olduğu için yukarı ok
+     * tuşuna basardı. Fiil şartıyla bu tür cümleler eşleşmez, "şifte bas" gibi bilinçli ama
+     * bozuk telaffuz edilmiş komutlar eşleşmeye devam eder.
+     */
+    private fun lookupKeyName(word: String, allowFuzzy: Boolean): String? {
+        KEY_NAMES[word]?.let { return it }
+        if (!allowFuzzy) return null
+        return closestMatch(word, KEY_NAMES.keys)?.let { KEY_NAMES[it] }
+    }
+
+    /** Bir kelimenin verilen ifade kümesine (fiil listeleri gibi) yaklaşık olarak uyup uymadığı. */
+    private fun matchesAny(word: String, phrases: Set<String>): Boolean =
+        word in phrases || closestMatch(word, phrases) != null
 }
