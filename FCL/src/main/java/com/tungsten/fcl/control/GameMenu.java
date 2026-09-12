@@ -733,7 +733,7 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
                     FileUtils.writeTextWithAppendMode(new File(fclBridge.getLogPath()), log);
                 }
             } catch (IOException e) {
-                Logging.LOG.log(Level.WARNING, "Can't log game log to target file", e.getMessage());
+                Logging.LOG.log(Level.WARNING, "Can't log game log to target file", e);
             }
         }
     }

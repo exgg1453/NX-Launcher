@@ -106,8 +106,12 @@ public class ControlViewGroup implements Cloneable, Observable {
     /**
      * 完整按键数据（viewData）是否已加载：轻量加载只解析布局元数据，
      * 布局首次显示/编辑前通过 controllers 异步补全。
+     *
+     * <p>默认 true：内存中构造的布局（新建、完整反序列化、克隆）其 viewData 本身即是完整数据，
+     * 没有可补全的来源。只有 {@link com.tungsten.fcl.setting.Controller#parseLightweight(java.io.File)}
+     * 产出的占位布局才置 false，等待按需解析。
      */
-    private transient boolean dataLoaded;
+    private transient boolean dataLoaded = true;
 
     public boolean isDataLoaded() {
         return dataLoaded;
@@ -150,7 +154,9 @@ public class ControlViewGroup implements Cloneable, Observable {
         ControlViewGroup viewGroup = new ControlViewGroup(UUID.randomUUID().toString());
         viewGroup.setName(getName());
         viewGroup.setVisibility(getVisibility());
-        viewGroup.setViewData(getViewData());
+        // 按键数据必须复制一份：共享同一 ViewData 实例会让克隆体与源布局互相影响
+        viewGroup.setViewData(getViewData().clone());
+        viewGroup.setDataLoaded(isDataLoaded());
         return viewGroup;
     }
 

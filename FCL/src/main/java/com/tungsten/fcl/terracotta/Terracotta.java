@@ -169,7 +169,7 @@ public class Terracotta {
                 writer.write(buf, 0, n);
             return writer.toString();
         } catch (IOException e) {
-            Logging.LOG.log(Level.SEVERE, e.getMessage());
+            Logging.LOG.log(Level.SEVERE, "Failed to collect logs", e);
             return "Failed to collect logs: " + e.getMessage();
         }
     }

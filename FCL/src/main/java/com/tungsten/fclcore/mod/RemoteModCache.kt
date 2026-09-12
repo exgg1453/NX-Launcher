@@ -101,7 +101,10 @@ object RemoteModCache {
             }
             val file = dbFile()
             file.delete()
-            File(file.parentFile, file.name + "-journal").delete()
+            // journal / WAL 旁文件一并删除，否则残留内容会在下次打开时被回放
+            listOf("-journal", "-wal", "-shm").forEach {
+                File(file.parentFile, file.name + it).delete()
+            }
         }
     }
 

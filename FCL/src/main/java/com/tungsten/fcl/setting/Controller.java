@@ -324,6 +324,8 @@ public class Controller implements Cloneable, Observable {
                                 ControlViewGroup group = new ControlViewGroup(groupId);
                                 group.setName(groupName);
                                 group.setVisibility(visibility);
+                                // 轻量解析只有元数据，按键数据待 loadViewGroupData 按需补全
+                                group.setDataLoaded(false);
                                 viewGroups.add(group);
                             }
                         }

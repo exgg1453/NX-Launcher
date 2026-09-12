@@ -197,7 +197,7 @@ public class RuntimeUtils {
                 try {
                     Os.symlink(tarEntry.getLinkName().replace("..", dest.getAbsolutePath()), new File(dest, tarEntry.getName()).getAbsolutePath());
                 } catch (Throwable e) {
-                    Logging.LOG.log(Level.WARNING, e.getMessage());
+                    Logging.LOG.log(Level.WARNING, "Failed to create symbolic link for " + tarEntry.getName(), e);
                 }
             } else if (tarEntry.isDirectory()) {
                 destPath.mkdirs();
