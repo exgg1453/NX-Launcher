@@ -29,6 +29,18 @@ sealed class VoiceCommandResult {
      * üzerinde uygulanacak piksel cinsinden yatay/dikey kaydırma miktarıdır; pozitif dx
      * sağa, pozitif dy aşağı bakışa karşılık gelir. */
     data class Look(val dx: Int, val dy: Int) : VoiceCommandResult()
+
+    /** Ekrana yeni bir kontrol butonu ekler (ör. "buton oluştur f5"). [text] butonun üstünde
+     * yazan etiket, [binding] basıldığında gönderilecek tuş bağlaması. */
+    data class CreateButton(val text: String, val binding: String) : VoiceCommandResult()
+
+    /** Sesle oluşturulan son butonu taşır. Değerler ekranın yüzdesi cinsindendir
+     * (pozitif dx sağa, pozitif dy aşağı). */
+    data class MoveButton(val dxPercent: Int, val dyPercent: Int) : VoiceCommandResult()
+
+    /** Sesle oluşturulan son butonun boyutunu ayarlar (ekran yüzdesi).
+     * null olan eksen değiştirilmez. */
+    data class ResizeButton(val widthPercent: Int?, val heightPercent: Int?) : VoiceCommandResult()
 }
 
 /**
@@ -62,6 +74,13 @@ object VoiceCommands {
         put("dabl", "key.keyboard.w"); put("çift ve", "key.keyboard.w")
         put("ıks", "key.keyboard.x"); put("iks", "key.keyboard.x")
         put("kyu", "key.keyboard.q"); put("kü", "key.keyboard.q")
+
+        // Tanıyıcının Türkçe modda sık ürettiği yazımlar (yaklaşık eşleştirmenin
+        // yakalayamayacağı kadar uzak olanlar burada birebir tabloda tutuluyor)
+        put("şift", "key.keyboard.left.shift"); put("şıft", "key.keyboard.left.shift")
+        put("sağ şift", "key.keyboard.right.shift"); put("sol şift", "key.keyboard.left.shift")
+        put("kontırol", "key.keyboard.left.control"); put("kontrl", "key.keyboard.left.control")
+        put("espeys", "key.keyboard.space"); put("enter tuşu", "key.keyboard.enter")
 
         for (f in 1..12) put("f$f", "key.keyboard.f$f")
 
@@ -197,7 +216,7 @@ object VoiceCommands {
     private const val LOOK_DELTA_LARGE = 220
 
     private fun detectLook(normalized: String, rawTokens: List<String>): VoiceCommandResult.Look? {
-        if (rawTokens.none { it in LOOK_VERBS }) return null
+        if (rawTokens.none { matchesAny(it, LOOK_VERBS) }) return null
 
         val right = rawTokens.any { it in LOOK_RIGHT_WORDS }
         val left = rawTokens.any { it in LOOK_LEFT_WORDS }
@@ -220,6 +239,134 @@ object VoiceCommands {
         return VoiceCommandResult.Look(dx, dy)
     }
 
+    // --- Sesle buton oluşturma / düzenleme ---------------------------------------------
+    //
+    // "buton oluştur f5"          -> F5 yazan, F5 tuşuna basan bir buton ekler
+    // "butonu sağa 5"             -> son eklenen butonu %5 sağa taşır
+    // "buton sağ sol 5"           -> genişliğini %5 yapar (bir eksenin iki yönü = o eksenin boyutu)
+    // "buton aşağı yukarı 8 sağ sol 5" -> yükseklik %8, genişlik %5
+    //
+    // Taşıma/boyutlandırma komutlarının hepsi cümlede "buton" kelimesini şart koşar.
+    // Şart olmasa "yukarı 5" hem yukarı ok tuşu + 5 tuşu hem de buton taşıma olarak
+    // okunurdu; "buton" kelimesi bu ikiliği tek başına çözüyor.
+
+    private val CREATE_VERBS = setOf("oluştur", "oluşturt", "ekle", "yarat", "create", "add", "make")
+    private val BUTTON_WORDS = setOf("buton", "butonu", "butonun", "butona", "tuş", "düğme", "button")
+
+    /** Sözle söylenen sayılar; tanıyıcı bazen "5" bazen "beş" üretiyor. */
+    private val NUMBER_WORDS: Map<String, Int> = mapOf(
+        "bir" to 1, "iki" to 2, "üç" to 3, "dört" to 4, "beş" to 5,
+        "altı" to 6, "yedi" to 7, "sekiz" to 8, "dokuz" to 9, "on" to 10,
+        "on beş" to 15, "yirmi" to 20, "yirmi beş" to 25, "otuz" to 30, "kırk" to 40, "elli" to 50,
+        "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5,
+        "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10,
+        "fifteen" to 15, "twenty" to 20, "thirty" to 30, "forty" to 40, "fifty" to 50,
+    )
+
+    /** Taşımada varsayılan adım, boyutlandırmada varsayılan boyut (ekran yüzdesi). */
+    private const val DEFAULT_STEP_PERCENT = 5
+
+    private fun parseNumber(token: String): Int? =
+        token.toIntOrNull() ?: NUMBER_WORDS[token]
+
+    /**
+     * "buton oluştur <tuş>" kalıbı. Etiket ve tuş bağlaması, cümlede geçen ilk tuş adından
+     * alınır: konuşurken "f5 olsun ismi ve f5 butonuna bassın" gibi uzun kurulan cümlelerde
+     * de, kısa "buton oluştur f5" cümlesinde de aynı sonuç çıkar.
+     */
+    private fun detectCreateButton(tokens: List<String>): VoiceCommandResult.CreateButton? {
+        if (tokens.none { it in BUTTON_WORDS }) return null
+        if (tokens.none { it in CREATE_VERBS }) return null
+        for (i in tokens.indices) {
+            if (i + 1 < tokens.size) {
+                val twoWord = "${tokens[i]} ${tokens[i + 1]}"
+                KEY_NAMES[twoWord]?.let {
+                    return VoiceCommandResult.CreateButton(buttonLabel(twoWord), it)
+                }
+            }
+            KEY_NAMES[tokens[i]]?.let {
+                return VoiceCommandResult.CreateButton(buttonLabel(tokens[i]), it)
+            }
+        }
+        return null
+    }
+
+    /** Buton etiketi: söylenen tuş adı, kısa adlar büyük harfe çevrilerek ("f5" -> "F5"). */
+    private fun buttonLabel(spokenKey: String): String =
+        if (spokenKey.length <= 3) spokenKey.uppercase(Locale("tr")) else spokenKey
+
+    /**
+     * "buton sağa 5" / "buton sağ sol 5 aşağı yukarı 8" kalıpları.
+     *
+     * Bir eksenin iki yönü birlikte söylenirse (sağ+sol, yukarı+aşağı) o eksenin *boyutu*
+     * ayarlanır; tek yön söylenirse buton o yöne *taşınır*. Sayı, o yön grubundan sonra
+     * gelen ilk sayıdır; sayı söylenmezse [DEFAULT_STEP_PERCENT] kullanılır.
+     */
+    private fun detectButtonEdit(tokens: List<String>): List<VoiceCommandResult> {
+        if (tokens.none { it in BUTTON_WORDS }) return emptyList()
+        if (tokens.any { it in CREATE_VERBS }) return emptyList()
+
+        // Yön kelimelerini ve onları izleyen sayıyı sırayla topla
+        data class Hit(val right: Boolean, val left: Boolean, val up: Boolean, val down: Boolean, val amount: Int)
+
+        var right = false
+        var left = false
+        var up = false
+        var down = false
+        var amount: Int? = null
+        val hits = mutableListOf<Hit>()
+
+        fun flush() {
+            if (right || left || up || down) {
+                hits += Hit(right, left, up, down, amount ?: DEFAULT_STEP_PERCENT)
+            }
+            right = false; left = false; up = false; down = false; amount = null
+        }
+
+        for (token in tokens) {
+            when {
+                token in LOOK_RIGHT_WORDS -> {
+                    if (amount != null) flush()
+                    right = true
+                }
+                token in LOOK_LEFT_WORDS -> {
+                    if (amount != null) flush()
+                    left = true
+                }
+                token in LOOK_UP_WORDS -> {
+                    if (amount != null) flush()
+                    up = true
+                }
+                token in LOOK_DOWN_WORDS -> {
+                    if (amount != null) flush()
+                    down = true
+                }
+                else -> parseNumber(token)?.let { if (right || left || up || down) amount = it }
+            }
+        }
+        flush()
+        if (hits.isEmpty()) return emptyList()
+
+        val results = mutableListOf<VoiceCommandResult>()
+        var width: Int? = null
+        var height: Int? = null
+        var dx = 0
+        var dy = 0
+        for (hit in hits) {
+            when {
+                hit.right && hit.left -> width = hit.amount
+                hit.up && hit.down -> height = hit.amount
+                hit.right -> dx += hit.amount
+                hit.left -> dx -= hit.amount
+                hit.down -> dy += hit.amount
+                hit.up -> dy -= hit.amount
+            }
+        }
+        if (width != null || height != null) results += VoiceCommandResult.ResizeButton(width, height)
+        if (dx != 0 || dy != 0) results += VoiceCommandResult.MoveButton(dx, dy)
+        return results
+    }
+
     fun match(recognizedText: String): List<VoiceCommandResult> {
         val normalized = normalize(recognizedText)
 
@@ -234,12 +381,18 @@ object VoiceCommands {
         // karakteri" saymadığından \b burada kullanılmıyor; bunun yerine kelimelere ayırıp
         // (tek ve iki kelimelik) tam eşleşme aranıyor.
         val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+        // Buton komutları tuş/bakış eşleştirmesinden önce denenir: "buton oluştur f5"
+        // cümlesindeki "f5" aksi hâlde ayrıca F5 tuşuna basardı.
+        detectCreateButton(rawTokens)?.let { return listOf(it) }
+        detectButtonEdit(rawTokens).takeIf { it.isNotEmpty() }?.let { return it }
+
         detectLook(normalized, rawTokens)?.let { return listOf(it) }
 
-        if (normalized in RELEASE_ALL_PHRASES) {
+        if (normalized in RELEASE_ALL_PHRASES || closestMatch(normalized, RELEASE_ALL_PHRASES) != null) {
             return listOf(VoiceCommandResult.ReleaseAll)
         }
-        if (normalized in REPEAT_LAST_PHRASES) {
+        if (normalized in REPEAT_LAST_PHRASES || closestMatch(normalized, REPEAT_LAST_PHRASES) != null) {
             return listOf(VoiceCommandResult.RepeatLast)
         }
 
@@ -247,11 +400,12 @@ object VoiceCommands {
 
         // Aynı cümlede yalnızca tek bir aç/kapa yönü uygulanır (ör. "w bas a'yı bırak"
         // gibi karışık cümleler desteklenmez); "bırak" geçerse tüm eylemler bırakma olur.
-        val isRelease = rawTokens.any { it in RELEASE_VERBS } || rawPairs.any { it in RELEASE_VERBS }
+        val isRelease = rawTokens.any { matchesAny(it, RELEASE_VERBS) } ||
+                rawPairs.any { it in RELEASE_VERBS }
         // Tek harfli tuş adları için "niyet" sinyali: ya bas/tıkla fiili ya da (bırakma
         // durumunda) bırak fiili - ikisi de "bu bir rastgele hece değil, bilinçli bir tuş
         // adı" anlamına gelir.
-        val hasTriggerVerb = isRelease || rawTokens.any { it in TRIGGER_VERBS }
+        val hasTriggerVerb = isRelease || rawTokens.any { matchesAny(it, TRIGGER_VERBS) }
 
         val results = mutableListOf<VoiceCommandResult>()
         var remaining = normalized
@@ -280,7 +434,7 @@ object VoiceCommands {
             }
             if (i + 1 < tokens.size && !consumed[i + 1]) {
                 val twoWord = "${tokens[i]} ${tokens[i + 1]}"
-                val binding = KEY_NAMES[twoWord]
+                val binding = lookupKeyName(twoWord, hasTriggerVerb)
                 if (binding != null) {
                     results += toAction(binding, isRelease)
                     consumed[i] = true; consumed[i + 1] = true
@@ -289,7 +443,7 @@ object VoiceCommands {
                 }
             }
             val token = tokens[i]
-            val binding = KEY_NAMES[token]
+            val binding = lookupKeyName(token, hasTriggerVerb)
             val needsVerb = token.length == 1 && token !in ALWAYS_BARE_LETTERS && !hasTriggerVerb
             if (binding != null && !needsVerb) {
                 results += toAction(binding, isRelease)
@@ -309,4 +463,87 @@ object VoiceCommands {
     private fun normalize(text: String): String {
         return text.lowercase(Locale("tr")).trim().trimEnd('.', '!', '?')
     }
+
+    // --- Esnek (yaklaşık) eşleştirme -------------------------------------------------
+    //
+    // Konuşma tanıma çıktısı nadiren tabloya birebir uyar: ek düşer/eklenir ("envanteri"
+    // yerine "envanterı"), tanıyıcı harf karıştırır ("şift" / "shift"), kullanıcı kelimeyi
+    // biraz farklı söyler. Bu yüzden tam eşleşme başarısız olduğunda kelimeler Levenshtein
+    // mesafesiyle tablodaki adlara yaklaştırılır.
+    //
+    // Eşik bilerek dar tutuldu: kısa adlarda hiç, orta uzunlukta 1, uzun adlarda 2 harf.
+    // Amaç sıradan konuşmanın yanlışlıkla tuşa basmasını önlemek - tek harfli tuş adları
+    // (a/e/o gibi gerçek kelimeler) yaklaşık eşleştirmeye hiç sokulmaz.
+
+    /** Bir kelimenin yaklaşık eşleşme için kabul edeceği en fazla harf farkı. */
+    private fun maxDistanceFor(word: String): Int = when {
+        word.length <= 3 -> 0
+        word.length <= 6 -> 1
+        else -> 2
+    }
+
+    /** Klasik Levenshtein düzenleme mesafesi; [limit] aşılırsa erken çıkar (limit + 1 döner). */
+    private fun editDistance(a: String, b: String, limit: Int): Int {
+        if (a == b) return 0
+        if (kotlin.math.abs(a.length - b.length) > limit) return limit + 1
+        var prev = IntArray(b.length + 1) { it }
+        var cur = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            cur[0] = i
+            var rowMin = cur[0]
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+                if (cur[j] < rowMin) rowMin = cur[j]
+            }
+            if (rowMin > limit) return limit + 1
+            val tmp = prev; prev = cur; cur = tmp
+        }
+        return prev[b.length]
+    }
+
+    /**
+     * [candidates] içinde [word]'e en yakın olanı döner; hiçbiri eşiğin içinde değilse null.
+     * Beraberlik durumunda eşleşme belirsiz sayılır ve null dönülür - yanlış tuşa basmaktansa
+     * hiç basmamak yeğdir.
+     */
+    private fun closestMatch(word: String, candidates: Iterable<String>): String? {
+        val limit = maxDistanceFor(word)
+        if (limit == 0) return null
+        var best: String? = null
+        var bestDistance = limit + 1
+        var tied = false
+        for (candidate in candidates) {
+            // Tek harfli tuş adları gerçek kelimelerle çakışır, yaklaşık eşleşmeye girmezler
+            if (candidate.length <= 3) continue
+            val d = editDistance(word, candidate, limit)
+            if (d > limit) continue
+            when {
+                d < bestDistance -> {
+                    bestDistance = d; best = candidate; tied = false
+                }
+                d == bestDistance -> tied = true
+            }
+        }
+        return if (tied) null else best
+    }
+
+    /**
+     * Tuş bağlaması bulur. Tam eşleşme her zaman geçerlidir; yaklaşık eşleşme yalnızca
+     * cümlede bir niyet fiili ("bas", "tıkla", "bırak"...) varsa denenir.
+     *
+     * Bu şart olmadan yaklaşık eşleşme sıradan konuşmayı tuşa çevirir: "yukarıda bekle"
+     * cümlesindeki "yukarıda", "yukarı" tuş adına bir harf uzaklıkta olduğu için yukarı ok
+     * tuşuna basardı. Fiil şartıyla bu tür cümleler eşleşmez, "şifte bas" gibi bilinçli ama
+     * bozuk telaffuz edilmiş komutlar eşleşmeye devam eder.
+     */
+    private fun lookupKeyName(word: String, allowFuzzy: Boolean): String? {
+        KEY_NAMES[word]?.let { return it }
+        if (!allowFuzzy) return null
+        return closestMatch(word, KEY_NAMES.keys)?.let { KEY_NAMES[it] }
+    }
+
+    /** Bir kelimenin verilen ifade kümesine (fiil listeleri gibi) yaklaşık olarak uyup uymadığı. */
+    private fun matchesAny(word: String, phrases: Set<String>): Boolean =
+        word in phrases || closestMatch(word, phrases) != null
 }

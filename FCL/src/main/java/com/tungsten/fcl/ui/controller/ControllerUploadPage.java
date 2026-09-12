@@ -117,7 +117,7 @@ public class ControllerUploadPage extends FCLPage implements View.OnClickListene
         }).whenComplete(Schedulers.androidUIThread(), exception -> {
             dialog.dismiss();
             if (exception != null) {
-                Logging.LOG.log(Level.SEVERE, "Failed to export controller and its info!", exception.getMessage());
+                Logging.LOG.log(Level.SEVERE, "Failed to export controller and its info!", exception);
             }
         }).start();
     }

@@ -178,7 +178,7 @@ public class JarExecutorMenu implements MenuCallback, FCLBridgeCallback, View.On
                 FileUtils.writeTextWithAppendMode(new File(fclBridge.getLogPath()), log);
             }
         } catch (IOException e) {
-            Logging.LOG.log(Level.WARNING, "Can't log jar executor log to target file", e.getMessage());
+            Logging.LOG.log(Level.WARNING, "Can't log jar executor log to target file", e);
         }
     }
 

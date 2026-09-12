@@ -55,7 +55,7 @@ public class Controllers {
                     }
                     DEFAULT_CONTROLLER.saveToDisk();
                 } catch (IOException e) {
-                    Logging.LOG.log(Level.SEVERE, "Failed to generate default controller!", e.getMessage());
+                    Logging.LOG.log(Level.SEVERE, "Failed to generate default controller!", e);
                 }
                 controllers.addAll(getControllersFromDisk());
             }
@@ -133,9 +133,9 @@ public class Controllers {
                     }
                     list.add(controller);
                 } catch (IOException e) {
-                    Logging.LOG.log(Level.WARNING, "Can't read file: " + json.getAbsolutePath(), e.getMessage());
+                    Logging.LOG.log(Level.WARNING, "Can't read file: " + json.getAbsolutePath(), e);
                 } catch (JsonParseException e) {
-                    Logging.LOG.log(Level.WARNING, "File: " + json.getAbsolutePath(), e.getMessage() + " is broken!");
+                    Logging.LOG.log(Level.WARNING, "File: " + json.getAbsolutePath() + " is broken!", e);
                     json.renameTo(new File(FCLPath.CONTROLLER_DIR, json.getName() + ".bak"));
                 }
             }

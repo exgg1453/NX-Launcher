@@ -179,5 +179,10 @@
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
+        <!-- Cihaz üstü (çevrimdışı) tanıma: bazı ROM'larda tanıma servisi yalnızca bu
+             sorgu ile görünür oluyor -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
 </manifest>

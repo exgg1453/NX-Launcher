@@ -20,6 +20,7 @@ public class AccountUI extends FCLCommonUI implements View.OnClickListener {
 
     private LinearLayoutCompat addOfflineAccount;
     private LinearLayoutCompat addMicrosoftAccount;
+    private LinearLayoutCompat addTokenAccount;
     private LinearLayoutCompat addLoginServer;
 
     private RecyclerView recyclerView;
@@ -35,9 +36,11 @@ public class AccountUI extends FCLCommonUI implements View.OnClickListener {
 
         addOfflineAccount = findViewById(R.id.offline);
         addMicrosoftAccount = findViewById(R.id.microsoft);
+        addTokenAccount = findViewById(R.id.microsoft_token);
         addLoginServer = findViewById(R.id.add_login_server);
         addOfflineAccount.setOnClickListener(this);
         addMicrosoftAccount.setOnClickListener(this);
+        addTokenAccount.setOnClickListener(this);
         addLoginServer.setOnClickListener(this);
 
         recyclerView = findViewById(R.id.recycler_view);
@@ -74,6 +77,10 @@ public class AccountUI extends FCLCommonUI implements View.OnClickListener {
         }
         if (view == addMicrosoftAccount) {
             CreateAccountDialog dialog = new CreateAccountDialog(getContext(), Accounts.FACTORY_MICROSOFT);
+            dialog.show();
+        }
+        if (view == addTokenAccount) {
+            CreateAccountDialog dialog = new CreateAccountDialog(getContext(), Accounts.FACTORY_MICROSOFT_TOKEN);
             dialog.show();
         }
         if (view == addLoginServer) {

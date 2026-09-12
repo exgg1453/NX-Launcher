@@ -3,13 +3,18 @@ package com.tungsten.fcl.control
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.tungsten.fcl.R
+import com.tungsten.fcl.control.data.BaseInfoData
+import com.tungsten.fcl.control.data.ControlButtonData
 import com.tungsten.fclauncher.bridge.FCLBridge
 import com.tungsten.fclauncher.keycodes.FCLKeycodes
 import com.tungsten.fclauncher.keycodes.MinecraftKeyBindingMapper
@@ -35,6 +40,15 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
     private var recognizer: SpeechRecognizer? = null
     private var stopped = true
 
+    /** Tanıyıcı cihaz üstünde (çevrimdışı) mi çalışıyor. Çevrimdışı tanıyıcı hem internet
+     * gerektirmez hem de oturum başı "bip" sesi çalmaz; ağ tanıyıcısı ikisini de yapar. */
+    private var usingOnDevice = false
+
+    /** Çevrimdışı tanıyıcıdan üst üste kaç kez kurtarılamaz hata alındı. Cihazda dil modeli
+     * indirilmemişse çevrimdışı tanıyıcı her seferinde hata verir; bu durumda tek seferlik
+     * olarak ağ tanıyıcısına düşülür (bkz. [onError]). */
+    private var onDeviceFailures = 0
+
     /** En son basılan/bırakılan tek seferlik (tap) tuş bağlaması; hedefsiz "kapat" komutu
      * bunu tekrar basar. */
     private var lastTapBinding: String? = null
@@ -44,6 +58,9 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
 
     companion object {
         private const val LOOK_POINTER_ID = "VoiceCommandLook"
+
+        /** Bu kadar ardışık çevrimdışı hatadan sonra ağ tanıyıcısına düşülür. */
+        private const val MAX_ON_DEVICE_FAILURES = 3
     }
 
     fun start() {
@@ -55,13 +72,45 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
             return
         }
         stopped = false
+        onDeviceFailures = 0
         mainHandler.post {
             if (stopped) return@post
-            recognizer = SpeechRecognizer.createSpeechRecognizer(activity).apply {
-                setRecognitionListener(this@VoiceCommandListener)
-            }
+            createRecognizer(preferOnDevice = true)
             listenOnce()
         }
+    }
+
+    /**
+     * Tanıyıcıyı kurar. Mümkünse cihaz üstü (çevrimdışı) tanıyıcı tercih edilir:
+     * internet gerektirmez, gecikmesi belirgin biçimde düşüktür, mikrofon sesi cihazdan
+     * çıkmaz ve oturum başına "bip" sesi çalmaz. Cihaz üstü tanıma yoksa (API < 33 ya da
+     * dil paketi yüklü değilse) ağ tanıyıcısına düşülür.
+     */
+    private fun createRecognizer(preferOnDevice: Boolean) {
+        recognizer?.let {
+            try {
+                it.destroy()
+            } catch (_: Exception) {
+            }
+        }
+        val onDevice = preferOnDevice &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+        recognizer = try {
+            if (onDevice) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(activity)
+            }
+        } catch (e: Exception) {
+            // Cihaz üstü tanıyıcı kurulamazsa ağ tanıyıcısı hâlâ çalışabilir
+            Logging.LOG.log(Level.WARNING, "VoiceCommandListener: failed to create recognizer (onDevice=$onDevice)", e)
+            if (onDevice) SpeechRecognizer.createSpeechRecognizer(activity) else null
+        }?.apply {
+            setRecognitionListener(this@VoiceCommandListener)
+        }
+        usingOnDevice = onDevice && recognizer != null
+        Logging.LOG.info("VoiceCommandListener: recognition mode = " + if (usingOnDevice) "on-device (offline)" else "network")
     }
 
     fun stop() {
@@ -85,6 +134,9 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            // Ağ tanıyıcısı kullanılıyorsa bile mümkünse cihaz üstü modeli kullanmasını iste:
+            // internet kopukken tanıma tamamen durmaz ve gecikme düşer.
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
         try {
             recognizer?.startListening(intent)
@@ -125,6 +177,78 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
             VoiceCommandResult.RepeatLast -> lastTapBinding?.let { tap(it) }
             is VoiceCommandResult.Chat -> sendChatMessage(result.message)
             is VoiceCommandResult.Look -> applyLook(result.dx, result.dy)
+            is VoiceCommandResult.CreateButton -> createButton(result.text, result.binding)
+            is VoiceCommandResult.MoveButton -> moveButton(result.dxPercent, result.dyPercent)
+            is VoiceCommandResult.ResizeButton -> resizeButton(result.widthPercent, result.heightPercent)
+        }
+    }
+
+    // --- Sesle buton oluşturma / düzenleme ---------------------------------------------
+    //
+    // Konum ve yüzde-boyut alanları binde (0..1000) ölçeklidir; sesle söylenen sayılar ise
+    // ekran yüzdesi olarak yorumlanır, bu yüzden 10 ile çarpılır ("5" -> 50 = ekranın %5'i).
+
+    /** Sesle en son oluşturulan buton; sonraki taşıma/boyutlandırma komutları buna uygulanır. */
+    private var lastVoiceButton: ControlButtonData? = null
+
+    private fun percentToPerMille(percent: Int) = percent * 10
+
+    private fun createButton(text: String, binding: String) {
+        val keycode = resolveKeycode(binding)
+        if (keycode == null) {
+            toast(activity.getString(R.string.voice_button_unknown_key, text))
+            return
+        }
+        Schedulers.androidUIThread().execute {
+            val data = ControlButtonData(java.util.UUID.randomUUID().toString())
+            data.text = text
+            // Ekranın ortasında doğar: hangi köşede olursa olsun kullanıcı onu görür ve
+            // sonraki "butonu sağa/yukarı" komutlarıyla istediği yere taşır.
+            data.baseInfo.xPosition = percentToPerMille(50)
+            data.baseInfo.yPosition = percentToPerMille(50)
+            // pressEvent: basılınca tuşu gönderir, bırakılınca serbest bırakır -
+            // "bu buton F5'e basar" davranışının karşılığı bu olay.
+            data.event.pressEvent.outputKeycodesList().setAll(listOf(keycode))
+            if (menu.viewManager.addViewByVoice(data)) {
+                lastVoiceButton = data
+                toast(activity.getString(R.string.voice_button_created, text))
+            } else {
+                toast(activity.getString(R.string.voice_button_failed))
+            }
+        }
+    }
+
+    private fun moveButton(dxPercent: Int, dyPercent: Int) {
+        val data = lastVoiceButton
+        if (data == null) {
+            toast(activity.getString(R.string.voice_button_none))
+            return
+        }
+        Schedulers.androidUIThread().execute {
+            val info = data.baseInfo
+            info.xPosition = (info.xPosition + percentToPerMille(dxPercent)).coerceIn(0, 1000)
+            info.yPosition = (info.yPosition + percentToPerMille(dyPercent)).coerceIn(0, 1000)
+        }
+    }
+
+    private fun resizeButton(widthPercent: Int?, heightPercent: Int?) {
+        val data = lastVoiceButton
+        if (data == null) {
+            toast(activity.getString(R.string.voice_button_none))
+            return
+        }
+        Schedulers.androidUIThread().execute {
+            val info = data.baseInfo
+            // Yüzde-boyut yolunu kullan: mutlak (dp) boyut ekran boyutuna göre ölçeklenmez.
+            info.sizeType = BaseInfoData.SizeType.PERCENTAGE
+            widthPercent?.let { info.percentageWidth.size = percentToPerMille(it).coerceIn(10, 1000) }
+            heightPercent?.let { info.percentageHeight.size = percentToPerMille(it).coerceIn(10, 1000) }
+        }
+    }
+
+    private fun toast(message: String) {
+        Schedulers.androidUIThread().execute {
+            Toast.makeText(activity, message, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -235,6 +359,7 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
     }
 
     override fun onResults(results: Bundle) {
+        onDeviceFailures = 0
         results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             ?.firstOrNull()
             ?.let { triggerCommands(it) }
@@ -242,6 +367,26 @@ class VoiceCommandListener(private val menu: GameMenu) : RecognitionListener {
     }
 
     override fun onError(error: Int) {
+        // Konuşma duyulmaması (NO_MATCH/SPEECH_TIMEOUT) normal akışın parçası; sürekli
+        // dinlemede sürekli görülür ve çevrimdışı tanıyıcının bozuk olduğu anlamına gelmez.
+        val transient = error == SpeechRecognizer.ERROR_NO_MATCH ||
+                error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+        if (usingOnDevice && !transient) {
+            onDeviceFailures++
+            if (onDeviceFailures >= MAX_ON_DEVICE_FAILURES) {
+                // Cihazda dil modeli yoksa çevrimdışı tanıyıcı ısrarla hata verir:
+                // sesli komutlar tamamen ölmesin diye ağ tanıyıcısına geç.
+                Logging.LOG.warning("VoiceCommandListener: on-device recognition failing (last error $error), falling back to network recognizer")
+                mainHandler.post {
+                    if (stopped) return@post
+                    createRecognizer(preferOnDevice = false)
+                    listenOnce()
+                }
+                return
+            }
+        } else if (!transient) {
+            onDeviceFailures = 0
+        }
         scheduleRestart()
     }
 

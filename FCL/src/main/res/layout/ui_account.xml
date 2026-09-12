@@ -91,6 +91,35 @@
 
         </androidx.appcompat.widget.LinearLayoutCompat>
 
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:id="@+id/microsoft_token"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_container_transparent_clickable"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="horizontal"
+            android:padding="10dp"
+            android:stateListAnimator="@xml/anim_scale">
+
+            <com.tungsten.fcllibrary.component.view.FCLImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:background="@drawable/ic_baseline_microsoft_24"
+                app:use_theme_color="true" />
+
+            <com.tungsten.fcllibrary.component.view.FCLTextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginStart="10dp"
+                android:singleLine="true"
+                android:text="@string/account_methods_token"
+                app:use_theme_color="true" />
+
+        </androidx.appcompat.widget.LinearLayoutCompat>
+
         <ListView
             android:id="@+id/server_list"
             android:layout_width="match_parent"
