@@ -1401,4 +1401,10 @@
     <string name="voice_button_unknown_key">Unknown key for button "%1$s"</string>
     <string name="voice_button_failed">No layout group available to add the button to</string>
     <string name="voice_button_none">No voice-created button to adjust yet</string>
+    <string name="message_check_game_version_unsupported">NX Launcher does not support Minecraft %1$s yet: launching it usually crashes or hangs on a black screen.\n\nThis is only a guess based on the version number, so it may be wrong - you can continue and see for yourself.</string>
+    <string name="account_methods_token">Log in with an access token</string>
+    <string name="account_create_token">Log in with token</string>
+    <string name="account_create_token_desc">Paste a Minecraft access token. The Microsoft sign-in flow is skipped and the token is verified directly against the Minecraft profile service.\n\nThere is no refresh token this way, so you will have to add the account again once the token expires.</string>
+    <string name="account_create_token_hint">Minecraft access token</string>
+    <string name="account_create_token_alert">Enter an access token</string>
 </resources>

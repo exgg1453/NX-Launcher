@@ -30,6 +30,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.annotations.SerializedName;
 import com.tungsten.fclcore.auth.AccountFactory;
 import com.tungsten.fclcore.auth.AuthenticationException;
+import com.tungsten.fclcore.auth.CredentialExpiredException;
 import com.tungsten.fclcore.auth.OAuth;
 import com.tungsten.fclcore.auth.ServerDisconnectException;
 import com.tungsten.fclcore.auth.ServerResponseMalformedException;
@@ -70,6 +71,11 @@ public class MicrosoftService {
     public static final String STAGE_PROFILE = "profile";
 
     private static final String SCOPE = "XboxLive.signin offline_access";
+
+    private static final String TOKEN_TYPE_BEARER = "Bearer";
+
+    /** Jetonla girişte gerçek bitiş zamanı bilinmediğinden varsayılan ömür (24 saat). */
+    private static final long ACCESS_TOKEN_ASSUMED_LIFETIME = 24L * 60 * 60 * 1000;
     private static final ThreadPoolExecutor POOL = threadPool("MicrosoftProfileProperties", true, 2, 10,
             TimeUnit.SECONDS);
 
@@ -103,6 +109,12 @@ public class MicrosoftService {
 
     public MicrosoftSession refresh(MicrosoftSession oldSession, AccountFactory.ProgressCallback progressCallback) throws AuthenticationException {
         requireNonNull(progressCallback);
+        if (oldSession.getRefreshToken() == null) {
+            // Jetonla eklenen hesaplarda yenileme jetonu yoktur: OAuth yenilemesi burada
+            // anlamsız bir sunucu hatasına dönüşeceği için doğrudan "kimlik süresi doldu"
+            // hatası verilir, kullanıcı hesabı yeniden ekler.
+            throw new CredentialExpiredException();
+        }
         try {
             OAuth.Result result = OAuth.MICROSOFT.refresh(oldSession.getRefreshToken(), new OAuth.Options(SCOPE, callback));
             return authenticateViaLiveAccessToken(result.accessToken(), result.refreshToken(), progressCallback);
@@ -211,6 +223,41 @@ public class MicrosoftService {
         } catch (JsonParseException e) {
             throw new ServerResponseMalformedException(e);
         }
+    }
+
+    /**
+     * Hazır bir Minecraft erişim jetonundan oturum kurar (jetonla giriş).
+     *
+     * Microsoft/Xbox akışının tamamı atlanır: jeton doğrudan Minecraft profil ucuna
+     * sorulur, geçerliyse dönen UUID ve kullanıcı adıyla oturum oluşturulur. Jetonun
+     * kendisi Microsoft tarafından üretildiği için burada yenileme jetonu yoktur; jeton
+     * süresi dolduğunda hesap yeniden eklenmelidir ({@link MicrosoftAccount} yenilemeyi
+     * yenileme jetonu olmadan yapamaz).
+     *
+     * @param accessToken Minecraft erişim jetonu ("Bearer " öneki olmadan)
+     * @throws AuthenticationException jeton geçersizse veya profil alınamazsa
+     */
+    public MicrosoftSession authenticateWithAccessToken(String accessToken) throws AuthenticationException {
+        requireNonNull(accessToken);
+
+        MinecraftProfileResponse profileResponse;
+        try {
+            profileResponse = getMinecraftProfile(TOKEN_TYPE_BEARER, accessToken);
+        } catch (ResponseCodeException e) {
+            // 401/403: jeton geçersiz ya da süresi dolmuş; diğer kodlar sunucu tarafı sorunu
+            throw new AuthenticationException("Minecraft access token rejected (HTTP " + e.getResponseCode() + ")", e);
+        } catch (IOException e) {
+            throw new ServerDisconnectException(e);
+        }
+        handleErrorResponse(profileResponse);
+
+        // Jetonun gerçek bitiş zamanı yalnızca Microsoft akışında bilinir. Jetonla girişte
+        // elimizde yok; oturumu süresi dolmuş saymamak için ileri bir zaman yazılır, jeton
+        // gerçekten geçersizleştiğinde oyun başlatma sırasında zaten hata alınır.
+        long notAfter = System.currentTimeMillis() + ACCESS_TOKEN_ASSUMED_LIFETIME;
+        return new MicrosoftSession(TOKEN_TYPE_BEARER, accessToken, notAfter, null,
+                new MicrosoftSession.User(profileResponse.id.toString()),
+                new MicrosoftSession.GameProfile(profileResponse.id, profileResponse.name));
     }
 
     public boolean validate(long notAfter, String tokenType, String accessToken) throws AuthenticationException {

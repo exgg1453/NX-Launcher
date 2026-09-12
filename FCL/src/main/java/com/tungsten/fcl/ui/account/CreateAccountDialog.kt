@@ -20,6 +20,7 @@ import com.tungsten.fcl.databinding.ItemCharacterBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountExternalBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountMicrosoftBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountOfflineBinding
+import com.tungsten.fcl.databinding.ViewCreateAccountTokenBinding
 import com.tungsten.fcl.game.TexturesLoader
 import com.tungsten.fcl.setting.Accounts
 import com.tungsten.fcl.setting.ConfigHolder.config
@@ -34,6 +35,7 @@ import com.tungsten.fclcore.auth.authlibinjector.AuthlibInjectorAccountFactory
 import com.tungsten.fclcore.auth.authlibinjector.AuthlibInjectorServer
 import com.tungsten.fclcore.auth.authlibinjector.BoundAuthlibInjectorAccountFactory
 import com.tungsten.fclcore.auth.microsoft.MicrosoftAccountFactory
+import com.tungsten.fclcore.auth.microsoft.MicrosoftTokenAccountFactory
 import com.tungsten.fclcore.auth.offline.OfflineAccountFactory
 import com.tungsten.fclcore.auth.yggdrasil.GameProfile
 import com.tungsten.fclcore.auth.yggdrasil.YggdrasilService
@@ -79,6 +81,7 @@ class CreateAccountDialog : FCLDialog, View.OnClickListener {
             when (factory) {
                 is OfflineAccountFactory -> R.string.account_create_offline
                 is MicrosoftAccountFactory -> R.string.account_create_microsoft
+                is MicrosoftTokenAccountFactory -> R.string.account_create_token
                 else -> R.string.account_create_external
             }
         )
@@ -102,6 +105,7 @@ class CreateAccountDialog : FCLDialog, View.OnClickListener {
             is BoundAuthlibInjectorAccountFactory -> ExternalDetails(context, factory.server)
             is AuthlibInjectorAccountFactory -> ExternalDetails(context)
             is MicrosoftAccountFactory -> MicrosoftDetails(context)
+            is MicrosoftTokenAccountFactory -> TokenDetails(context)
             else -> OfflineDetails(context)
         }
         binding.detailContainer.removeAllViews()
@@ -233,6 +237,30 @@ private class OfflineDetails(private val context: Context) : Details {
                 throw IllegalStateException(context.getString(R.string.account_create_alert))
             }
             return name
+        }
+
+    override val password: String? get() = null
+
+    override val additionalData: Any? get() = null
+}
+
+/**
+ * Jetonla giriş paneli: tek bir metin alanı, içine Minecraft erişim jetonu yapıştırılır.
+ * Jeton [MicrosoftTokenAccountFactory] tarafından username alanından okunur.
+ */
+private class TokenDetails(private val context: Context) : Details {
+
+    private val binding = ViewCreateAccountTokenBinding.inflate(LayoutInflater.from(context))
+
+    override val view: View get() = binding.root
+
+    override val username: String
+        get() {
+            val token = binding.token.text.toString()
+            if (StringUtils.isBlank(token)) {
+                throw IllegalStateException(context.getString(R.string.account_create_token_alert))
+            }
+            return token
         }
 
     override val password: String? get() = null

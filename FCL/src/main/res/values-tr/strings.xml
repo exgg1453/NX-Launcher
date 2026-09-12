@@ -1334,4 +1334,10 @@
     <string name="voice_button_unknown_key">"%1$s" için tuş tanınmadı</string>
     <string name="voice_button_failed">Butonun ekleneceği bir düzen grubu yok</string>
     <string name="voice_button_none">Henüz sesle oluşturulmuş bir buton yok</string>
+    <string name="message_check_game_version_unsupported">NX Launcher, Minecraft %1$s sürümünü henüz desteklemiyor: başlatmayı denemek genelde çökmeyle ya da siyah ekranda kalmayla sonuçlanıyor.\n\nBu yalnızca sürüm numarasına bakan bir tahmin, yanılıyor olabilir - devam edip kendin deneyebilirsin.</string>
+    <string name="account_methods_token">Erişim jetonuyla giriş yap</string>
+    <string name="account_create_token">Jetonla giriş</string>
+    <string name="account_create_token_desc">Minecraft erişim jetonunu yapıştır. Microsoft giriş akışı atlanır ve jeton doğrudan Minecraft profil servisine doğrulatılır.\n\nBu yolda yenileme jetonu olmadığı için jetonun süresi dolduğunda hesabı yeniden eklemen gerekir.</string>
+    <string name="account_create_token_hint">Minecraft erişim jetonu</string>
+    <string name="account_create_token_alert">Bir erişim jetonu gir</string>
 </resources>

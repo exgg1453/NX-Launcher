@@ -133,11 +133,49 @@ public final class LauncherHelper {
         this.launchingStepsPane.setTitle(context.getString(R.string.version_launch));
     }
 
+    /**
+     * NX Launcher'ın başlatabildiği en yüksek Minecraft sürümü. Bunun üstündeki sürümler
+     * başlatıcı tarafında SDL3 giriş/render katmanı istiyor; NX bu katmanı içermediği için
+     * oyun genelde açılmadan çöküyor (SIGSEGV) ya da siyah ekranda kalıyor.
+     *
+     * Bu yalnızca bir tahmin: sürüm numarası bir özelliğin gerekip gerekmediğini kesin
+     * söylemez, bu yüzden uyarı engelleyici değil - kullanıcı yine de devam edebilir.
+     */
+    private static final String MAX_SUPPORTED_GAME_VERSION = "26.2";
+
     public void launch() {
         LOG.info("Launching game version: " + selectedVersion);
 
+        String gameVersion = profile.getRepository().getGameVersion(selectedVersion).orElse("");
+        if (isProbablyUnsupported(gameVersion)) {
+            new FCLAlertDialog.Builder(context)
+                    .setCancelable(false)
+                    .setMessage(context.getString(R.string.message_check_game_version_unsupported, gameVersion))
+                    .setPositiveButton(context.getString(R.string.button_cancel), null)
+                    .setNegativeButton(context.getString(R.string.mod_check_continue), this::launchNow)
+                    .create().show();
+            return;
+        }
+        launchNow();
+    }
+
+    private void launchNow() {
         launchingStepsPane.show();
         launch0();
+    }
+
+    /**
+     * Sürüm numarasına bakarak bu sürümün desteklenmiyor olma ihtimalini kestirir.
+     *
+     * Yalnızca tanınan (ayrıştırılabilen) sürümler değerlendirilir: tanınmayan bir sürüm
+     * dizesi eşiğin üstünde mi altında mı olduğu güvenilir biçimde söylenemez ve yanlış
+     * alarm vermektense hiç uyarmamak yeğdir.
+     */
+    private boolean isProbablyUnsupported(String gameVersion) {
+        if (gameVersion.isEmpty() || !GameVersionNumber.isKnown(gameVersion)) {
+            return false;
+        }
+        return GameVersionNumber.compare(gameVersion, MAX_SUPPORTED_GAME_VERSION) > 0;
     }
 
     private void launch0() {

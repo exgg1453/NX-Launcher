@@ -66,6 +66,7 @@ import com.tungsten.fclcore.auth.authlibinjector.AuthlibInjectorServer;
 import com.tungsten.fclcore.auth.authlibinjector.BoundAuthlibInjectorAccountFactory;
 import com.tungsten.fclcore.auth.microsoft.MicrosoftAccount;
 import com.tungsten.fclcore.auth.microsoft.MicrosoftAccountFactory;
+import com.tungsten.fclcore.auth.microsoft.MicrosoftTokenAccountFactory;
 import com.tungsten.fclcore.auth.microsoft.MicrosoftService;
 import com.tungsten.fclcore.auth.offline.OfflineAccount;
 import com.tungsten.fclcore.auth.offline.OfflineAccountFactory;
@@ -104,8 +105,10 @@ public final class Accounts {
 
     public static final OfflineAccountFactory FACTORY_OFFLINE = new OfflineAccountFactory(AUTHLIB_INJECTOR_DOWNLOADER);
     public static final AuthlibInjectorAccountFactory FACTORY_AUTHLIB_INJECTOR = new AuthlibInjectorAccountFactory(AUTHLIB_INJECTOR_DOWNLOADER, Accounts::getOrCreateAuthlibInjectorServer);
-    public static final MicrosoftAccountFactory FACTORY_MICROSOFT = new MicrosoftAccountFactory(new MicrosoftService(OAUTH_CALLBACK));
-    public static final List<AccountFactory<?>> FACTORIES = immutableListOf(FACTORY_OFFLINE, FACTORY_MICROSOFT, FACTORY_AUTHLIB_INJECTOR);
+    private static final MicrosoftService MICROSOFT_SERVICE = new MicrosoftService(OAUTH_CALLBACK);
+    public static final MicrosoftAccountFactory FACTORY_MICROSOFT = new MicrosoftAccountFactory(MICROSOFT_SERVICE);
+    public static final MicrosoftTokenAccountFactory FACTORY_MICROSOFT_TOKEN = new MicrosoftTokenAccountFactory(MICROSOFT_SERVICE);
+    public static final List<AccountFactory<?>> FACTORIES = immutableListOf(FACTORY_OFFLINE, FACTORY_MICROSOFT, FACTORY_MICROSOFT_TOKEN, FACTORY_AUTHLIB_INJECTOR);
 
     // ==== login type / account factory mapping ====
     private static final Map<String, AccountFactory<?>> type2factory = new HashMap<>();
@@ -115,6 +118,9 @@ public final class Accounts {
         type2factory.put("offline", FACTORY_OFFLINE);
         type2factory.put("authlibInjector", FACTORY_AUTHLIB_INJECTOR);
         type2factory.put("microsoft", FACTORY_MICROSOFT);
+        // Jetonla eklenen hesaplar ayrı tip olarak saklanır: yenileme jetonları yoktur,
+        // bu yüzden yüklenirken de jeton fabrikasına dönmeleri gerekir.
+        type2factory.put("microsoftToken", FACTORY_MICROSOFT_TOKEN);
 
         type2factory.forEach((type, factory) -> factory2type.put(factory, type));
     }
