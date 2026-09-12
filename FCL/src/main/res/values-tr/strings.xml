@@ -1330,4 +1330,8 @@
     <string name="log_upload_share_template">Başlatıcıda bir sorunla karşılaştım, işte günlük bağlantısı:\n%s</string>
     <string name="close">Kapat</string>
     <string name="create_account_first">Başlatmadan önce bir oyun hesabı oluşturun</string>
+    <string name="voice_button_created">"%1$s" butonu oluşturuldu</string>
+    <string name="voice_button_unknown_key">"%1$s" için tuş tanınmadı</string>
+    <string name="voice_button_failed">Butonun ekleneceği bir düzen grubu yok</string>
+    <string name="voice_button_none">Henüz sesle oluşturulmuş bir buton yok</string>
 </resources>

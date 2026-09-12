@@ -29,6 +29,18 @@ sealed class VoiceCommandResult {
      * üzerinde uygulanacak piksel cinsinden yatay/dikey kaydırma miktarıdır; pozitif dx
      * sağa, pozitif dy aşağı bakışa karşılık gelir. */
     data class Look(val dx: Int, val dy: Int) : VoiceCommandResult()
+
+    /** Ekrana yeni bir kontrol butonu ekler (ör. "buton oluştur f5"). [text] butonun üstünde
+     * yazan etiket, [binding] basıldığında gönderilecek tuş bağlaması. */
+    data class CreateButton(val text: String, val binding: String) : VoiceCommandResult()
+
+    /** Sesle oluşturulan son butonu taşır. Değerler ekranın yüzdesi cinsindendir
+     * (pozitif dx sağa, pozitif dy aşağı). */
+    data class MoveButton(val dxPercent: Int, val dyPercent: Int) : VoiceCommandResult()
+
+    /** Sesle oluşturulan son butonun boyutunu ayarlar (ekran yüzdesi).
+     * null olan eksen değiştirilmez. */
+    data class ResizeButton(val widthPercent: Int?, val heightPercent: Int?) : VoiceCommandResult()
 }
 
 /**
@@ -227,6 +239,134 @@ object VoiceCommands {
         return VoiceCommandResult.Look(dx, dy)
     }
 
+    // --- Sesle buton oluşturma / düzenleme ---------------------------------------------
+    //
+    // "buton oluştur f5"          -> F5 yazan, F5 tuşuna basan bir buton ekler
+    // "butonu sağa 5"             -> son eklenen butonu %5 sağa taşır
+    // "buton sağ sol 5"           -> genişliğini %5 yapar (bir eksenin iki yönü = o eksenin boyutu)
+    // "buton aşağı yukarı 8 sağ sol 5" -> yükseklik %8, genişlik %5
+    //
+    // Taşıma/boyutlandırma komutlarının hepsi cümlede "buton" kelimesini şart koşar.
+    // Şart olmasa "yukarı 5" hem yukarı ok tuşu + 5 tuşu hem de buton taşıma olarak
+    // okunurdu; "buton" kelimesi bu ikiliği tek başına çözüyor.
+
+    private val CREATE_VERBS = setOf("oluştur", "oluşturt", "ekle", "yarat", "create", "add", "make")
+    private val BUTTON_WORDS = setOf("buton", "butonu", "butonun", "butona", "tuş", "düğme", "button")
+
+    /** Sözle söylenen sayılar; tanıyıcı bazen "5" bazen "beş" üretiyor. */
+    private val NUMBER_WORDS: Map<String, Int> = mapOf(
+        "bir" to 1, "iki" to 2, "üç" to 3, "dört" to 4, "beş" to 5,
+        "altı" to 6, "yedi" to 7, "sekiz" to 8, "dokuz" to 9, "on" to 10,
+        "on beş" to 15, "yirmi" to 20, "yirmi beş" to 25, "otuz" to 30, "kırk" to 40, "elli" to 50,
+        "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5,
+        "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10,
+        "fifteen" to 15, "twenty" to 20, "thirty" to 30, "forty" to 40, "fifty" to 50,
+    )
+
+    /** Taşımada varsayılan adım, boyutlandırmada varsayılan boyut (ekran yüzdesi). */
+    private const val DEFAULT_STEP_PERCENT = 5
+
+    private fun parseNumber(token: String): Int? =
+        token.toIntOrNull() ?: NUMBER_WORDS[token]
+
+    /**
+     * "buton oluştur <tuş>" kalıbı. Etiket ve tuş bağlaması, cümlede geçen ilk tuş adından
+     * alınır: konuşurken "f5 olsun ismi ve f5 butonuna bassın" gibi uzun kurulan cümlelerde
+     * de, kısa "buton oluştur f5" cümlesinde de aynı sonuç çıkar.
+     */
+    private fun detectCreateButton(tokens: List<String>): VoiceCommandResult.CreateButton? {
+        if (tokens.none { it in BUTTON_WORDS }) return null
+        if (tokens.none { it in CREATE_VERBS }) return null
+        for (i in tokens.indices) {
+            if (i + 1 < tokens.size) {
+                val twoWord = "${tokens[i]} ${tokens[i + 1]}"
+                KEY_NAMES[twoWord]?.let {
+                    return VoiceCommandResult.CreateButton(buttonLabel(twoWord), it)
+                }
+            }
+            KEY_NAMES[tokens[i]]?.let {
+                return VoiceCommandResult.CreateButton(buttonLabel(tokens[i]), it)
+            }
+        }
+        return null
+    }
+
+    /** Buton etiketi: söylenen tuş adı, kısa adlar büyük harfe çevrilerek ("f5" -> "F5"). */
+    private fun buttonLabel(spokenKey: String): String =
+        if (spokenKey.length <= 3) spokenKey.uppercase(Locale("tr")) else spokenKey
+
+    /**
+     * "buton sağa 5" / "buton sağ sol 5 aşağı yukarı 8" kalıpları.
+     *
+     * Bir eksenin iki yönü birlikte söylenirse (sağ+sol, yukarı+aşağı) o eksenin *boyutu*
+     * ayarlanır; tek yön söylenirse buton o yöne *taşınır*. Sayı, o yön grubundan sonra
+     * gelen ilk sayıdır; sayı söylenmezse [DEFAULT_STEP_PERCENT] kullanılır.
+     */
+    private fun detectButtonEdit(tokens: List<String>): List<VoiceCommandResult> {
+        if (tokens.none { it in BUTTON_WORDS }) return emptyList()
+        if (tokens.any { it in CREATE_VERBS }) return emptyList()
+
+        // Yön kelimelerini ve onları izleyen sayıyı sırayla topla
+        data class Hit(val right: Boolean, val left: Boolean, val up: Boolean, val down: Boolean, val amount: Int)
+
+        var right = false
+        var left = false
+        var up = false
+        var down = false
+        var amount: Int? = null
+        val hits = mutableListOf<Hit>()
+
+        fun flush() {
+            if (right || left || up || down) {
+                hits += Hit(right, left, up, down, amount ?: DEFAULT_STEP_PERCENT)
+            }
+            right = false; left = false; up = false; down = false; amount = null
+        }
+
+        for (token in tokens) {
+            when {
+                token in LOOK_RIGHT_WORDS -> {
+                    if (amount != null) flush()
+                    right = true
+                }
+                token in LOOK_LEFT_WORDS -> {
+                    if (amount != null) flush()
+                    left = true
+                }
+                token in LOOK_UP_WORDS -> {
+                    if (amount != null) flush()
+                    up = true
+                }
+                token in LOOK_DOWN_WORDS -> {
+                    if (amount != null) flush()
+                    down = true
+                }
+                else -> parseNumber(token)?.let { if (right || left || up || down) amount = it }
+            }
+        }
+        flush()
+        if (hits.isEmpty()) return emptyList()
+
+        val results = mutableListOf<VoiceCommandResult>()
+        var width: Int? = null
+        var height: Int? = null
+        var dx = 0
+        var dy = 0
+        for (hit in hits) {
+            when {
+                hit.right && hit.left -> width = hit.amount
+                hit.up && hit.down -> height = hit.amount
+                hit.right -> dx += hit.amount
+                hit.left -> dx -= hit.amount
+                hit.down -> dy += hit.amount
+                hit.up -> dy -= hit.amount
+            }
+        }
+        if (width != null || height != null) results += VoiceCommandResult.ResizeButton(width, height)
+        if (dx != 0 || dy != 0) results += VoiceCommandResult.MoveButton(dx, dy)
+        return results
+    }
+
     fun match(recognizedText: String): List<VoiceCommandResult> {
         val normalized = normalize(recognizedText)
 
@@ -241,6 +381,12 @@ object VoiceCommands {
         // karakteri" saymadığından \b burada kullanılmıyor; bunun yerine kelimelere ayırıp
         // (tek ve iki kelimelik) tam eşleşme aranıyor.
         val rawTokens = normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+        // Buton komutları tuş/bakış eşleştirmesinden önce denenir: "buton oluştur f5"
+        // cümlesindeki "f5" aksi hâlde ayrıca F5 tuşuna basardı.
+        detectCreateButton(rawTokens)?.let { return listOf(it) }
+        detectButtonEdit(rawTokens).takeIf { it.isNotEmpty() }?.let { return it }
+
         detectLook(normalized, rawTokens)?.let { return listOf(it) }
 
         if (normalized in RELEASE_ALL_PHRASES || closestMatch(normalized, RELEASE_ALL_PHRASES) != null) {

@@ -1397,4 +1397,8 @@
     <string name="log_upload_share_template">I encountered a problem in the launcher, here is the log link:\n%s</string>
     <string name="close">Close</string>
     <string name="create_account_first">Please create a game account before launching</string>
+    <string name="voice_button_created">Button "%1$s" created</string>
+    <string name="voice_button_unknown_key">Unknown key for button "%1$s"</string>
+    <string name="voice_button_failed">No layout group available to add the button to</string>
+    <string name="voice_button_none">No voice-created button to adjust yet</string>
 </resources>

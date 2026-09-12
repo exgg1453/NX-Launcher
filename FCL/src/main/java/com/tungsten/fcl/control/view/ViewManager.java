@@ -90,6 +90,34 @@ private long loadDialogShowTime = 0;
         }
     }
 
+    /**
+     * Sesli komutla buton ekler. {@link #addView(CustomControl)} yalnızca düzenleme modunda
+     * çalışır; sesli komutlar ise oyun oynanırken dinlendiği için burada düzenleme modu
+     * aranmaz: buton o an görünen ilk düzen grubuna eklenir, diske yazılır ve hemen çizilir.
+     *
+     * @return butonun eklenip eklenmediği (eklenecek bir düzen grubu yoksa false)
+     */
+    public boolean addViewByVoice(CustomControl control) {
+        ControlViewGroup group = gameMenu.getViewGroup();
+        if (group == null) {
+            for (ControlViewGroup candidate : targets()) {
+                group = candidate;
+                break;
+            }
+        }
+        if (group == null || !group.isDataLoaded()) {
+            return false;
+        }
+        if (control instanceof ControlButtonData) {
+            group.getViewData().addButton((ControlButtonData) control);
+        } else {
+            group.getViewData().addDirection((ControlDirectionData) control);
+        }
+        saveController();
+        loadView(control, true, gameMenu.getController().viewGroups().indexOf(group) * 2f);
+        return true;
+    }
+
     public void removeView(CustomControl control) {
         if (gameMenu.getViewGroup() != null && gameMenu.isEditMode()) {
             for (int i = 0; i < gameMenu.getBaseLayout().getChildCount(); i++) {
